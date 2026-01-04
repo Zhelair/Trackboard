@@ -1,5 +1,5 @@
 
-const CACHE = 'trackboard-v1-2-1';
+const CACHE = 'trackboard-v1-3-0';
 const ASSETS = [
   './',
   './index.html',

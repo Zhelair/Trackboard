@@ -14,6 +14,13 @@
     const wk = isoWeekKey(new Date());
     const existing = await Store.getWeek(wk) || {weekKey:wk};
 
+
+// Carry-forward from previous week (opt-in)
+const prevKey = isoWeekKey(new Date(Date.now() - 7*86400000));
+const prev = await Store.getWeek(prevKey);
+const hasPrevCarry = prev && prev.carryForward && (prev.intention||'').trim().length;
+
+
     const stack = UI.h('div',{class:'stack'},[]);
 
     stack.appendChild(UI.h('div',{class:'card soft'},[
@@ -21,7 +28,22 @@
       UI.h('div',{class:'small'},['Goals are direction, not obligation.'])
     ]));
 
-    const intentionCard = UI.h('div',{class:'card'},[
+    
+// Optional: show last week's intention as a gentle starting point
+let lastWeekCard = null;
+if(hasPrevCarry){
+  lastWeekCard = UI.h('div',{class:'card soft', id:'last-week-card'},[
+    UI.h('div',{class:'h2'},['Last week']),
+    UI.h('div',{class:'small', style:'white-space:pre-wrap;margin-top:6px;'},[prev.intention.trim()]),
+    UI.h('div',{class:'row', style:'margin-top:10px'},[
+      UI.h('button',{class:'btn small', type:'button', id:'btn-use-prev'},['Use again']),
+      UI.h('button',{class:'btn small', type:'button', id:'btn-start-fresh'},['Start fresh'])
+    ])
+  ]);
+}
+
+
+const intentionCard = UI.h('div',{class:'card'},[
       UI.h('div',{class:'h2'},['What would make this week feel good enough?']),
       UI.h('div',{class:'small'},['One or two short sentences.']),
       UI.h('textarea',{id:'wk-intention', placeholder:'Example: Keep evenings calm. Apply to two jobs.'},[])
@@ -62,7 +84,29 @@
     mount.appendChild(stack);
 
     // Fill
-    document.getElementById('wk-intention').value = existing.intention || '';
+
+// Prefill from last week if user opted to carry forward and this week is empty
+const intentionInput = document.getElementById('wk-intention');
+if(hasPrevCarry && !((existing.intention||'').trim().length)){
+  existing.intention = prev.intention.trim();
+  intentionInput.value = existing.intention;
+}
+
+if(lastWeekCard){
+  stack.insertBefore(lastWeekCard, intentionCard);
+  document.getElementById('btn-use-prev').addEventListener('click', ()=>{
+    intentionInput.value = prev.intention.trim();
+    existing.intention = intentionInput.value;
+    UI.toast('Loaded last week. You can edit it.');
+  });
+  document.getElementById('btn-start-fresh').addEventListener('click', ()=>{
+    intentionInput.value = '';
+    existing.intention = '';
+    UI.toast('Starting fresh.');
+  });
+}
+
+    if(!intentionInput.value) intentionInput.value = existing.intention || '';
     document.getElementById('wk-carry').checked = !!existing.carryForward;
 
     function setReflection(val){
