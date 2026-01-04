@@ -42,10 +42,20 @@
     whyCard.appendChild(chips);
 
     const noteCard = UI.h('div',{class:'card soft'},[
-      UI.h('div',{class:'h2'},['Anything you want to note?']),
-      UI.h('div',{class:'small'},['Optional. One line is enough.']),
+  UI.h('div',{class:'h2'},['Details (optional)']),
+  UI.h('div',{class:'small'},['If you want, add a little context. Keep it simple.']),
+  UI.h('div',{class:'grid2'},[
+    UI.h('div',{},[
+      UI.h('div',{class:'small'},['Quantity']),
+      UI.h('input',{type:'text', id:'alcohol-qty', placeholder:'e.g., 1 beer / 2 glasses'})
+    ]),
+    UI.h('div',{},[
+      UI.h('div',{class:'small'},['Note']),
       UI.h('input',{type:'text', id:'alcohol-note', placeholder:'Short note (optional).'})
-    ]);
+    ])
+  ])
+]);
+
     ctxWrap.appendChild(whyCard);
     ctxWrap.appendChild(noteCard);
 
@@ -71,37 +81,86 @@
       UI.h('div',{class:'small'},['Money saved will appear once you set a baseline in Settings (optional).'])
     ]);
 
+const saveCard = UI.h('div',{class:'card'},[
+  UI.h('div',{class:'row', style:'justify-content:space-between;align-items:center;'},[
+    UI.h('div',{class:'small', id:'alcohol-save-hint'},['No unsaved changes.']),
+    UI.h('button',{type:'button', class:'btn primary', id:'btn-save-alcohol', disabled:true},['Save today'])
+  ])
+]);
+
     stack.appendChild(todayCard);
     stack.appendChild(ctxWrap);
+    stack.appendChild(saveCard);
     stack.appendChild(craveCard);
     stack.appendChild(progress);
     mount.appendChild(stack);
 
+const saveBtn = document.getElementById('btn-save-alcohol');
+const saveHint = document.getElementById('alcohol-save-hint');
+let dirty = false;
+function setDirty(on=true){
+  dirty = on;
+  saveBtn.disabled = !dirty;
+  if(saveHint){
+    saveHint.textContent = dirty ? 'Not saved yet.' : 'No unsaved changes.';
+  }
+}
+
     // Fill
+    document.getElementById('alcohol-qty').value = existing.alcoholQty || '';
     document.getElementById('alcohol-note').value = existing.alcoholNote || '';
 
     function showHad(show){
       ctxWrap.style.display = show ? 'flex' : 'none';
     }
-    showHad(existing.alcohol === 'had');
+showHad(existing.alcohol === 'had');
 
-    // Buttons
-    document.getElementById('btn-free').addEventListener('click', async ()=>{
-      existing.alcohol = 'free';
-      showHad(false);
-      document.getElementById('btn-free').classList.add('primary');
-      document.getElementById('btn-had').classList.remove('primary');
-      await Store.putEntry(existing);
-      UI.toast('Noted.');
-    });
-    document.getElementById('btn-had').addEventListener('click', async ()=>{
-      existing.alcohol = 'had';
-      showHad(true);
-      document.getElementById('btn-had').classList.add('primary');
-      document.getElementById('btn-free').classList.remove('primary');
-      await Store.putEntry(existing);
-      UI.toast('Noted.');
-    });
+// Initial state
+if(existing.alcohol === 'free'){
+  document.getElementById('btn-free').classList.add('primary');
+  document.getElementById('btn-had').classList.remove('primary');
+} else if(existing.alcohol === 'had'){
+  document.getElementById('btn-had').classList.add('primary');
+  document.getElementById('btn-free').classList.remove('primary');
+} else {
+  document.getElementById('btn-free').classList.remove('primary');
+  document.getElementById('btn-had').classList.remove('primary');
+}
+setDirty(false);
+
+// Buttons
+
+    document.getElementById('btn-free').addEventListener('click', ()=>{
+  existing.alcohol = 'free';
+  showHad(false);
+  document.getElementById('btn-free').classList.add('primary');
+  document.getElementById('btn-had').classList.remove('primary');
+  setDirty(true);
+  UI.toast('Selected. Tap “Save today” to store.');
+});
+
+    document.getElementById('btn-had').addEventListener('click', ()=>{
+  existing.alcohol = 'had';
+  showHad(true);
+  document.getElementById('btn-had').classList.add('primary');
+  document.getElementById('btn-free').classList.remove('primary');
+  setDirty(true);
+  UI.toast('Selected. Tap “Save today” to store.');
+});
+
+
+
+// Save
+saveBtn.addEventListener('click', async ()=>{
+  // Always sync latest fields (in case user didn't type after last input event)
+  existing.alcoholQty = (document.getElementById('alcohol-qty')?.value || '').trim();
+  existing.alcoholNote = (document.getElementById('alcohol-note')?.value || '').trim();
+  existing.alcoholWhy = Array.from(selected);
+
+  await Store.putEntry(existing);
+  setDirty(false);
+  UI.toast('Saved.');
+});
 
     whyCard.addEventListener('click', async (e)=>{
       const btn = e.target.closest('[data-why]');
@@ -111,7 +170,7 @@
         else selected.add(t);
         existing.alcoholWhy = Array.from(selected);
         renderWhy();
-        await Store.putEntry(existing);
+        setDirty(true);
       }
       if(e.target && e.target.id === 'btn-addwhy'){
         const v = prompt('Add a short word or phrase:');
@@ -121,17 +180,19 @@
             selected.add(t);
             existing.alcoholWhy = Array.from(selected);
             renderWhy();
-            await Store.putEntry(existing);
+            setDirty(true);
           }
         }
       }
     });
 
-    document.getElementById('alcohol-note').addEventListener('change', async ()=>{
-      existing.alcoholNote = document.getElementById('alcohol-note').value.trim();
-      await Store.putEntry(existing);
-      UI.toast('Saved.');
-    });
+    function syncDetailFields(){
+  existing.alcoholQty = document.getElementById('alcohol-qty').value.trim();
+  existing.alcoholNote = document.getElementById('alcohol-note').value.trim();
+  setDirty(true);
+}
+document.getElementById('alcohol-qty').addEventListener('input', syncDetailFields);
+document.getElementById('alcohol-note').addEventListener('input', syncDetailFields);
 
     document.getElementById('btn-wait').addEventListener('click', ()=>{
       const area = document.getElementById('wait-area');
