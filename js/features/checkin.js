@@ -1,11 +1,14 @@
-
 (function(){
-  const TAGS = ['work','PIP','money','job hunt','sleep','health','family','exercise'];
+  const TAGS = ['work','money','job hunt','sleep','health','family','exercise','PIP'];
 
-  function moodButtons(selected){
-    const row = UI.h('div', {class:'row', style:'margin-top:8px'}, []);
+  function moodRow(selected){
+    const row = UI.h('div',{class:'pillrow', style:'margin-top:8px'},[]);
     for(let i=1;i<=5;i++){
-      row.appendChild(UI.h('button',{class:'btn'+(selected===i?' primary':''), type:'button', 'data-mood':String(i)},[String(i)]));
+      row.appendChild(UI.h('button',{
+        type:'button',
+        class:'pill'+(selected===i?' active':''),
+        'data-mood':String(i)
+      },[String(i)]));
     }
     return row;
   }
@@ -14,116 +17,146 @@
     const key = Store.todayKey();
     const existing = await Store.getEntry(key) || {date:key};
 
-    const card = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h1'},['Check-in']),
-      UI.h('p',{class:'p'},['Whatever it is, it’s okay to log it.']),
+    document.getElementById('brand-subtitle').textContent = 'Check-in · Private · Stored on this device';
+
+    const stack = UI.h('div',{class:'stack'},[]);
+
+    stack.appendChild(UI.h('div',{class:'card soft'},[
+      UI.h('div',{class:'h2'},['Today — Check-in']),
+      UI.h('p',{class:'p'},['Whatever it is — it’s okay to log it.']),
+      UI.h('div',{class:'small'},['You don’t have to explain or fix anything.'])
+    ]));
+
+    // Mood card
+    const moodCard = UI.h('div',{class:'card'},[
+      UI.h('div',{class:'h2'},['How does today feel right now?']),
+      UI.h('div',{class:'small'},['A number is enough.']),
+      moodRow(existing.mood || null)
     ]);
 
-    // Mood
-    card.appendChild(UI.h('div',{class:'field'},[
-      UI.h('label',{},['Mood (1–5)']),
-      moodButtons(existing.mood || 3),
-      UI.h('div',{class:'small'},['A number is enough.'])
-    ]));
-
-    // Tags
-    const chips = UI.h('div',{class:'chips'},[]);
+    // Tags card
+    const tagCard = UI.h('div',{class:'card'},[
+      UI.h('div',{class:'h2'},['What influenced today?']),
+      UI.h('div',{class:'small'},['Optional · up to three.']),
+    ]);
+    const chips = UI.h('div',{class:'pillrow'},[]);
     const selected = new Set(existing.tags || []);
-    function renderChips(){
+    function renderTags(){
       chips.innerHTML='';
       TAGS.forEach(t=>{
-        const sel = selected.has(t);
-        chips.appendChild(UI.h('button',{type:'button', class:'chip'+(sel?' sel':''), 'data-tag':t},[t]));
+        chips.appendChild(UI.h('button',{
+          type:'button',
+          class:'pill'+(selected.has(t)?' active':''),
+          'data-tag':t
+        },[t]));
       });
-      chips.appendChild(UI.h('button',{type:'button', class:'chip', 'data-tag':'__custom'},['+ custom']));
+      chips.appendChild(UI.h('button',{type:'button', class:'pill', id:'btn-addtag'},['+ custom']));
     }
-    renderChips();
-
-    card.appendChild(UI.h('div',{class:'field'},[
-      UI.h('label',{},['What influenced today? (up to 3)']),
-      chips
-    ]));
+    renderTags();
+    tagCard.appendChild(chips);
 
     // Notes
-    const note = UI.h('textarea',{placeholder:'Just a line or two, if you want.'},[existing.note||'']);
-    card.appendChild(UI.h('div',{class:'field'},[
-      UI.h('label',{},['Notes (optional)']),
-      note
-    ]));
+    const notesCard = UI.h('div',{class:'card'},[
+      UI.h('div',{class:'h2'},['Today’s notes']),
+      UI.h('div',{class:'small'},['Write as much or as little as you want.']),
+      UI.h('textarea',{id:'checkin-notes', placeholder:'You can be brief or messy.'},[])
+    ]);
 
-    // Something good
-    const good = UI.h('input',{type:'text', placeholder:'Even something small counts.', value: existing.good || ''},[]);
-    card.appendChild(UI.h('div',{class:'field'},[
-      UI.h('label',{},['Something good today (optional)']),
-      good
-    ]));
+    // Positive moment
+    const posCard = UI.h('div',{class:'card soft'},[
+      UI.h('div',{class:'h2'},['One positive moment today']),
+      UI.h('div',{class:'small'},['Even something small counts.']),
+      UI.h('input',{type:'text', id:'checkin-positive', placeholder:'A short line is enough.'})
+    ]);
 
     // Sleep
-    const bed = UI.h('input',{type:'time', value: existing.sleepBed || ''},[]);
-    const wake = UI.h('input',{type:'time', value: existing.sleepWake || ''},[]);
-    const poor = UI.h('input',{type:'checkbox'},[]);
-    poor.checked = !!existing.sleepPoor;
-
-    card.appendChild(UI.h('div',{class:'field'},[
-      UI.h('label',{},['Sleep (optional)']),
+    const sleepCard = UI.h('div',{class:'card'},[
+      UI.h('div',{class:'h2'},['Sleep']),
       UI.h('div',{class:'row'},[
-        UI.h('div',{style:'flex:1'},[UI.h('label',{},['Went to bed']), bed]),
-        UI.h('div',{style:'flex:1'},[UI.h('label',{},['Woke up']), wake]),
+        UI.h('div',{style:'flex:1'},[
+          UI.h('div',{class:'small'},['Went to bed']),
+          UI.h('input',{type:'time', id:'sleep-bed'})
+        ]),
+        UI.h('div',{style:'flex:1'},[
+          UI.h('div',{class:'small'},['Woke up']),
+          UI.h('input',{type:'time', id:'sleep-wake'})
+        ])
       ]),
-      UI.h('label', {style:'display:flex; align-items:center; gap:8px; margin-top:6px'}, [
-        poor, UI.h('span',{},['Poor sleep'])
+      UI.h('label',{class:'small', style:'display:flex;gap:10px;align-items:center;margin-top:8px'},[
+        UI.h('input',{type:'checkbox', id:'sleep-poor'}),
+        UI.h('span',{},['Poor sleep'])
       ])
-    ]));
+    ]);
 
-    const saveBtn = UI.h('button',{class:'btn primary full', type:'button', style:'margin-top:12px'},['Save']);
-    card.appendChild(saveBtn);
+    const actions = UI.h('div',{class:'card soft'},[
+      UI.h('button',{class:'btn primary full', type:'button', id:'btn-save'},['Save today'])
+    ]);
 
-    // Events
-    card.addEventListener('click', async (e)=>{
-      const mb = e.target.closest('[data-mood]');
-      if(mb){
-        existing.mood = Number(mb.dataset.mood);
-        TrackboardRouter.go('checkin'); // rerender quick & simple
-      }
-      const tg = e.target.closest('[data-tag]');
-      if(tg){
-        const t = tg.dataset.tag;
-        if(t === '__custom'){
-          const val = prompt('Add a tag (short):');
-          if(val){
-            const v = val.trim().slice(0,20);
-            if(v){
-              if(selected.size >= 3 && !selected.has(v)) UI.toast('Max 3 tags');
-              else {
-                if(selected.has(v)) selected.delete(v); else selected.add(v);
-                existing.tags = Array.from(selected);
-              }
-            }
+    stack.appendChild(moodCard);
+    stack.appendChild(tagCard);
+    stack.appendChild(notesCard);
+    stack.appendChild(posCard);
+    stack.appendChild(sleepCard);
+    stack.appendChild(actions);
+
+    mount.appendChild(stack);
+
+    // Fill existing
+    document.getElementById('checkin-notes').value = existing.notes || '';
+    document.getElementById('checkin-positive').value = existing.positive || '';
+    document.getElementById('sleep-bed').value = existing.sleepBed || '';
+    document.getElementById('sleep-wake').value = existing.sleepWake || '';
+    document.getElementById('sleep-poor').checked = !!existing.poorSleep;
+
+    // Mood click
+    moodCard.addEventListener('click', async (e)=>{
+      const btn = e.target.closest('[data-mood]');
+      if(!btn) return;
+      const val = parseInt(btn.dataset.mood,10);
+      existing.mood = val;
+      // refresh pills
+      const row = moodRow(val);
+      moodCard.replaceChild(row, moodCard.querySelector('.pillrow'));
+    });
+
+    // Tag click
+    tagCard.addEventListener('click', (e)=>{
+      const tbtn = e.target.closest('[data-tag]');
+      if(tbtn){
+        const t = tbtn.dataset.tag;
+        if(selected.has(t)) selected.delete(t);
+        else {
+          if(selected.size >= 3){
+            UI.toast('Up to three is enough.');
+            return;
           }
-        } else {
-          if(selected.has(t)) selected.delete(t);
-          else {
-            if(selected.size >= 3) { UI.toast('Max 3 tags'); return; }
-            selected.add(t);
-          }
-          existing.tags = Array.from(selected);
+          selected.add(t);
         }
-        renderChips();
+        existing.tags = Array.from(selected);
+        renderTags();
+      }
+      if(e.target && e.target.id === 'btn-addtag'){
+        const v = prompt('Add a short tag (one or two words):');
+        if(v){
+          const t = v.trim().slice(0,24);
+          if(t){
+            if(selected.size < 3) selected.add(t);
+            existing.tags = Array.from(selected);
+            renderTags();
+          }
+        }
       }
     });
 
-    saveBtn.addEventListener('click', async ()=>{
-      existing.note = note.value.slice(0,240);
-      existing.good = good.value.slice(0,200);
-      existing.sleepBed = bed.value || '';
-      existing.sleepWake = wake.value || '';
-      existing.sleepPoor = !!poor.checked;
-      existing.updatedAt = Date.now();
-      existing.createdAt = existing.createdAt || Date.now();
+    // Save
+    document.getElementById('btn-save').addEventListener('click', async ()=>{
+      existing.notes = document.getElementById('checkin-notes').value.trim();
+      existing.positive = document.getElementById('checkin-positive').value.trim();
+      existing.sleepBed = document.getElementById('sleep-bed').value;
+      existing.sleepWake = document.getElementById('sleep-wake').value;
+      existing.poorSleep = document.getElementById('sleep-poor').checked;
       await Store.putEntry(existing);
-      UI.toast('Saved.');
+      UI.toast('Saved. You can come back anytime.');
     });
-
-    mount.appendChild(card);
   });
 })();

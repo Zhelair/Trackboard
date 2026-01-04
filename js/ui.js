@@ -24,9 +24,28 @@
     return el;
   }
 
+
   function fmtDate(d){
     return d.toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'});
   }
 
-  window.UI = { toast, h, fmtDate };
+  function weekBounds(d=new Date()){
+    const date = new Date(d);
+    const day = date.getDay(); // 0 Sun ... 6 Sat
+    const diffToMon = (day === 0 ? -6 : 1 - day);
+    const start = new Date(date);
+    start.setDate(date.getDate() + diffToMon);
+    start.setHours(0,0,0,0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    return { start, end };
+  }
+
+  function inRange(isoDate, start, end){
+    const d = new Date(isoDate + 'T00:00:00');
+    return d >= start && d < end;
+  }
+
+  window.UI = { toast, h, fmtDate, weekBounds, inRange };
+
 })();

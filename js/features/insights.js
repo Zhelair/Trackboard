@@ -1,51 +1,36 @@
-
 (function(){
-  function startOfWeek(d=new Date()){
-    const x = new Date(d);
-    const day = x.getDay() || 7;
-    x.setDate(x.getDate() - (day-1));
-    x.setHours(0,0,0,0);
-    return x;
-  }
-
   TrackboardRouter.register('insights', async (mount)=>{
+    document.getElementById('brand-subtitle').textContent = 'Insights · Private · Stored on this device';
+
     const entries = await Store.getAllEntries();
-    const card = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h1'},['Insights']),
-      UI.h('p',{class:'p'},['Patterns, not judgement.']),
-    ]);
+    const week = UI.weekBounds(new Date());
+    const inWeek = entries.filter(e=> UI.inRange(e.date, week.start, week.end));
 
-    const wk = startOfWeek(new Date());
-    const weekEntries = entries.filter(e=>{
-      const d = new Date(e.date+'T00:00:00');
-      return d >= wk;
+    const moods = inWeek.map(e=> e.mood).filter(x=> typeof x==='number');
+    const avgMood = moods.length ? (moods.reduce((a,b)=>a+b,0)/moods.length).toFixed(1) : '—';
+
+    const tags = {};
+    inWeek.forEach(e=>{
+      (e.tags||[]).forEach(t=> tags[t]=(tags[t]||0)+1);
     });
+    const topTags = Object.entries(tags).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
 
-    const moods = weekEntries.map(e=>Number(e.mood||0)).filter(n=>n>0);
-    const avgMood = moods.length ? (moods.reduce((a,b)=>a+b,0)/moods.length) : null;
+    const alcoholFree = inWeek.filter(e=> e.alcohol==='free').length;
+    const poorSleep = inWeek.filter(e=> e.poorSleep).length;
 
-    const tagCounts = {};
-    let alcoholFree = 0;
-    let poorSleep = 0;
+    const stack = UI.h('div',{class:'stack'},[]);
 
-    for(const e of weekEntries){
-      (e.tags||[]).forEach(t=> tagCounts[t]=(tagCounts[t]||0)+1);
-      if(e.alcohol === 'free') alcoholFree++;
-      if(e.sleepPoor) poorSleep++;
-    }
-    const topTags = Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
-
-    const wrap = UI.h('div',{class:'card', style:'margin-top:12px; background:rgba(31,31,36,.6)'},[
+    const card = UI.h('div',{class:'card'},[
       UI.h('div',{class:'h1'},['This week']),
-      UI.h('div',{class:'kv'},[UI.h('div',{},['Average mood']), UI.h('div',{},[avgMood?avgMood.toFixed(1):'—'])]),
-      UI.h('div',{class:'kv'},[UI.h('div',{},['Most common tags']), UI.h('div',{},[topTags.length?topTags.join(', '):'—'])]),
-      UI.h('div',{class:'kv'},[UI.h('div',{},['Alcohol-free days']), UI.h('div',{},[String(alcoholFree)])]),
-      UI.h('div',{class:'kv'},[UI.h('div',{},['Poor sleep days']), UI.h('div',{},[String(poorSleep)])]),
+      UI.h('div',{class:'small'},[`Average mood: ${avgMood}`]),
+      UI.h('div',{class:'small'},[`Alcohol-free days: ${alcoholFree}`]),
+      UI.h('div',{class:'small'},[`Poor sleep days: ${poorSleep}`]),
+      UI.h('div',{class:'hr'},[]),
+      UI.h('div',{class:'h2'},['Patterns']),
+      UI.h('div',{class:'small'},[ topTags.length ? `Most common influences: ${topTags.join(', ')}` : 'Add a few check-ins to see patterns.' ])
     ]);
 
-    card.appendChild(wrap);
-    card.appendChild(UI.h('p',{class:'small', style:'margin-top:10px'},['(Calendar view will come next slice.)']));
-
-    mount.appendChild(card);
+    stack.appendChild(card);
+    mount.appendChild(stack);
   });
 })();

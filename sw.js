@@ -1,5 +1,5 @@
 
-const CACHE = 'trackboard-v1';
+const CACHE = 'trackboard-v1-2';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './js/router.js',
   './js/ui.js',
   './js/store.js',
+  './js/security.js',
   './js/app.js',
   './js/features/home.js',
   './js/features/checkin.js',
@@ -17,6 +18,7 @@ const ASSETS = [
   './js/features/calm.js',
   './js/features/insights.js',
   './js/features/settings.js',
+  './js/features/unlock.js',
   './manifest.webmanifest',
   './assets/app-icon-192.png',
   './assets/app-icon-512.png'

@@ -1,7 +1,5 @@
-
 (function(){
-  function weekKey(d=new Date()){
-    // ISO week key like 2026-W02
+  function isoWeekKey(d=new Date()){
     const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
     const dayNum = date.getUTCDay() || 7;
     date.setUTCDate(date.getUTCDate() + 4 - dayNum);
@@ -11,102 +9,86 @@
   }
 
   TrackboardRouter.register('goals', async (mount)=>{
-    const key = Store.todayKey();
-    const entry = await Store.getEntry(key) || {date:key};
-    const tab = entry.goalsTab || 'today';
+    document.getElementById('brand-subtitle').textContent = 'Goals · Private · Stored on this device';
 
-    const card = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h1'},['Goals']),
-      UI.h('p',{class:'p'},['Keep it realistic. You can always pick it up again.']),
-      UI.h('div',{class:'row', style:'margin-top:10px'},[
-        UI.h('button',{class:'btn'+(tab==='today'?' primary':''), type:'button', 'data-gtab':'today'},['Today']),
-        UI.h('button',{class:'btn'+(tab==='week'?' primary':''), type:'button', 'data-gtab':'week'},['This week']),
+    const wk = isoWeekKey(new Date());
+    const existing = await Store.getWeek(wk) || {weekKey:wk};
+
+    const stack = UI.h('div',{class:'stack'},[]);
+
+    stack.appendChild(UI.h('div',{class:'card soft'},[
+      UI.h('div',{class:'h2'},['This week']),
+      UI.h('div',{class:'small'},['Goals are direction, not obligation.'])
+    ]));
+
+    const intentionCard = UI.h('div',{class:'card'},[
+      UI.h('div',{class:'h2'},['What would make this week feel good enough?']),
+      UI.h('div',{class:'small'},['One or two short sentences.']),
+      UI.h('textarea',{id:'wk-intention', placeholder:'Example: Keep evenings calm. Apply to two jobs.'},[])
+    ]);
+
+    const checkCard = UI.h('div',{class:'card soft'},[
+      UI.h('div',{class:'h2'},['Gentle check']),
+      UI.h('div',{class:'small'},['How did this week go?']),
+      UI.h('div',{class:'row', style:'margin-top:8px'},[
+        UI.h('button',{class:'btn small', type:'button', 'data-ref':'better'},['Better than expected']),
+        UI.h('button',{class:'btn small', type:'button', 'data-ref':'right'},['About right']),
+        UI.h('button',{class:'btn small', type:'button', 'data-ref':'hard'},['Harder than I hoped'])
       ])
     ]);
 
-    async function save(){
-      entry.updatedAt = Date.now();
-      entry.createdAt = entry.createdAt || Date.now();
-      await Store.putEntry(entry);
-    }
+    const carryCard = UI.h('div',{class:'card'},[
+      UI.h('div',{class:'h2'},['Carry forward']),
+      UI.h('label',{class:'small', style:'display:flex;gap:10px;align-items:center;'},[
+        UI.h('input',{type:'checkbox', id:'wk-carry'}),
+        UI.h('span',{},['Keep this intention for next week.'])
+      ])
+    ]);
 
-    function listUI(items, onChange){
-      const wrap = UI.h('div',{},[]);
-      const ul = UI.h('div',{},[]);
-      function render(){
-        ul.innerHTML='';
-        (items||[]).forEach((it, idx)=>{
-          const cb = UI.h('input',{type:'checkbox'},[]);
-          cb.checked = !!it.done;
-          cb.addEventListener('change', ()=>{
-            it.done = cb.checked;
-            onChange();
-          });
-          const inp = UI.h('input',{type:'text', value: it.text || ''},[]);
-          inp.addEventListener('input', ()=>{
-            it.text = inp.value.slice(0,80);
-            onChange();
-          });
-          ul.appendChild(UI.h('div',{class:'row', style:'align-items:center; width:100%'},[
-            cb, UI.h('div',{style:'flex:1'},[inp])
-          ]));
-        });
-      }
-      render();
+    const summaryCard = UI.h('div',{class:'card soft'},[
+      UI.h('div',{class:'h2'},['Good enough week']),
+      UI.h('div',{class:'small', id:'wk-summary'},['You stayed engaged. That counts.'])
+    ]);
 
-      const addBtn = UI.h('button',{class:'btn full', type:'button', style:'margin-top:10px'},['+ Add goal']);
-      addBtn.addEventListener('click', ()=>{
-        items.push({text:'', done:false});
-        render();
-        onChange();
+    const actions = UI.h('div',{class:'card soft'},[
+      UI.h('button',{class:'btn primary full', type:'button', id:'wk-save'},['Save'])
+    ]);
+
+    stack.appendChild(intentionCard);
+    stack.appendChild(checkCard);
+    stack.appendChild(carryCard);
+    stack.appendChild(summaryCard);
+    stack.appendChild(actions);
+    mount.appendChild(stack);
+
+    // Fill
+    document.getElementById('wk-intention').value = existing.intention || '';
+    document.getElementById('wk-carry').checked = !!existing.carryForward;
+
+    function setReflection(val){
+      existing.reflection = val;
+      checkCard.querySelectorAll('[data-ref]').forEach(b=>{
+        b.classList.toggle('primary', b.dataset.ref === val);
       });
-
-      wrap.appendChild(ul);
-      wrap.appendChild(addBtn);
-      return wrap;
+      const s = document.getElementById('wk-summary');
+      if(val === 'better') s.textContent = 'Nice. Keep it simple and repeat what worked.';
+      else if(val === 'right') s.textContent = 'That’s a solid week. Good enough is good.';
+      else if(val === 'hard') s.textContent = 'Hard weeks count too. Keep the bar kind.';
+      else s.textContent = 'You stayed engaged. That counts.';
     }
+    if(existing.reflection) setReflection(existing.reflection);
 
-    const body = UI.h('div',{},[]);
-    card.appendChild(body);
-
-    async function render(){
-      body.innerHTML='';
-      if(tab==='today'){
-        entry.dailyGoals = entry.dailyGoals || [
-          {text:'Apply to 1 job', done:false},
-          {text:'Move 10 minutes', done:false},
-          {text:'Alcohol-free', done:false},
-        ];
-        body.appendChild(listUI(entry.dailyGoals, ()=>save()));
-      } else {
-        // store weekly goals inside entry for simplicity (can refactor later)
-        entry.weekKey = entry.weekKey || weekKey(new Date());
-        entry.weekGoals = entry.weekGoals || [
-          {text:'Apply to 5 jobs this week', done:false},
-          {text:'3 walks', done:false},
-          {text:'5 alcohol-free days', done:false},
-        ];
-        body.appendChild(UI.h('p',{class:'small', style:'margin-top:10px'},[`Week: ${entry.weekKey}`]));
-        body.appendChild(listUI(entry.weekGoals, ()=>save()));
-        // "good enough week" preview
-        const done = entry.weekGoals.filter(g=>g.done).length;
-        body.appendChild(UI.h('div',{class:'card', style:'margin-top:12px; background:rgba(31,31,36,.6)'},[
-          UI.h('div',{class:'h1'},['Good enough week']),
-          UI.h('p',{class:'p'},[`You completed ${done}/${entry.weekGoals.length}. Not perfect. Still progress.`)
-        ]));
-      }
-    }
-
-    card.addEventListener('click', async (e)=>{
-      const t = e.target.closest('[data-gtab]')?.dataset.gtab;
-      if(t){
-        entry.goalsTab = t;
-        await save();
-        TrackboardRouter.go('goals');
-      }
+    checkCard.addEventListener('click', (e)=>{
+      const btn = e.target.closest('[data-ref]');
+      if(!btn) return;
+      setReflection(btn.dataset.ref);
     });
 
-    await render();
-    mount.appendChild(card);
+    document.getElementById('wk-save').addEventListener('click', async ()=>{
+      existing.intention = document.getElementById('wk-intention').value.trim();
+      existing.carryForward = document.getElementById('wk-carry').checked;
+      await Store.putWeek(existing);
+      UI.toast('Saved.');
+    });
   });
 })();

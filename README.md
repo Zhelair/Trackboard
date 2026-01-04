@@ -1,36 +1,20 @@
 # Trackboard
 
-A private, local-only personal tracker (mood, stress, alcohol, sleep, goals) designed to run on GitHub Pages **without** sending your data anywhere.
+Trackboard is a local-first wellbeing notebook: mood, notes, calm tools, alcohol log, weekly goals, and lightweight insights.
 
-## What’s included (this deploy)
-- Home + navigation
-- Check-in (mood 1–5, tags, notes, good thing, sleep)
-- Alcohol (today / craving timer / progress with money+sleep estimates)
-- Release stress (rant, brain dump, 3-minute calm)
-- Goals (today + weekly)
-- Calm (grounding, body scan audio placeholders, your calming text)
-- Insights (basic weekly summary)
-- Settings (local-only reminders guide + alcohol estimates + report)
-- Report page (Print → Save as PDF)
-- PWA shell + offline cache
+## Privacy
+- No accounts, no servers.
+- Your data is stored on this device (browser storage).
+- Optional passphrase adds a local lock and encrypts stored entries/weeks.
 
-## Local-only reminders (max privacy)
-Because we’re not using any server/push service, use your phone OS reminders:
-- Sleep: 00:30
-- Check-ins: 10:30 / 15:30 / 20:30
+## v1.2 (One-bundle)
+- Notebook-style UI (Calm Morning default)
+- Theme switcher: Calm Morning / Warm Notebook / Dark
+- Check-in redesign (mood highlight + persistence)
+- Alcohol redesign (neutral logging + “wait 10 minutes”)
+- Calm redesign (one-minute grounding + 3/8 min body scan)
+- Goals redesign (weekly only, “good enough week”, carry-forward)
+- Security: local passphrase lock + auto-lock options + unlock screen
 
-Suggested reminder label: “Quick check-in — how are you?”
-
-## Body scan audio
-Two placeholder files are included:
-- assets/body-scan-3min.mp3
-- assets/body-scan-8min.mp3
-
-Replace them with real MP3s (3 min and 8 min) when ready.
-
-## Run locally
-Open `index.html` with a local server (recommended) so the service worker can work.
-
-## Deploy to GitHub Pages
-Repo Settings → Pages → Deploy from branch (main / root).
-
+## Deploy
+This project is built for GitHub Pages. Replace repo contents with the ZIP, commit, and push.

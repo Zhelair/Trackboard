@@ -1,4 +1,3 @@
-
 (function(){
   const routes = {};
   let current = null;
@@ -11,12 +10,22 @@
   }
 
   function render(route, opts={}){
+    if(window.Security && Security.isEnabled() && !Security.isUnlocked() && route !== 'unlock'){
+      route = 'unlock';
+    }
     if(!routes[route]) route = 'home';
     current = route;
     setActiveNav(route);
+
     const view = document.getElementById('view');
     view.innerHTML = '';
     routes[route](view, opts);
+
+    // Hide nav during unlock
+    const nav = document.querySelector('.bottomnav');
+    if(nav){
+      nav.style.display = (route === 'unlock') ? 'none' : 'flex';
+    }
   }
 
   function onHash(){
@@ -38,7 +47,8 @@
         window.location.hash = name;
       }
     },
-    current: ()=>current
+    current: ()=>current,
+    start: ()=> onHash()
   };
 
   window.addEventListener('hashchange', onHash);
@@ -49,9 +59,5 @@
       e.preventDefault();
       window.location.hash = btn.dataset.route;
     }
-  });
-
-  window.addEventListener('DOMContentLoaded', ()=>{
-    onHash();
   });
 })();
