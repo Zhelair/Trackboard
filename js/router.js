@@ -2,6 +2,7 @@
 (function(){
   const routes = {};
   let current = null;
+  let pendingOpts = null;
 
   function setActiveNav(route){
     document.querySelectorAll('.navbtn').forEach(btn=>{
@@ -16,17 +17,27 @@
     const view = document.getElementById('view');
     view.innerHTML = '';
     routes[route](view, opts);
-    window.location.hash = route;
   }
 
   function onHash(){
     const route = (window.location.hash || '#home').slice(1);
-    render(route);
+    const opts = pendingOpts || {};
+    pendingOpts = null;
+    render(route, opts);
   }
 
   window.TrackboardRouter = {
     register: (name, fn)=>{ routes[name]=fn; },
-    go: (name, opts)=>render(name, opts),
+    go: (name, opts)=>{
+      pendingOpts = opts || null;
+      const cur = (window.location.hash || '#home').slice(1);
+      if(cur === name){
+        render(name, pendingOpts || {});
+        pendingOpts = null;
+      } else {
+        window.location.hash = name;
+      }
+    },
     current: ()=>current
   };
 
@@ -36,7 +47,7 @@
     const btn = e.target.closest('[data-route]');
     if(btn){
       e.preventDefault();
-      render(btn.dataset.route);
+      window.location.hash = btn.dataset.route;
     }
   });
 
