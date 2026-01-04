@@ -149,14 +149,16 @@
     // Good enough UI
     const body = $('#wk-good-body');
 
-    function stepper(id, val, min, max){
+    // IMPORTANT: never use human labels as DOM ids or dataset keys.
+    // Labels can contain spaces/punctuation which break querySelector.
+    function stepper(label, key, val, min, max){
       return `
         <div class="row mt" style="justify-content:space-between; gap:12px; flex-wrap:wrap;">
-          <div class="muted">${id}</div>
+          <div class="muted">${label}</div>
           <div class="row" style="gap:8px;">
-            <button class="btn" data-step="${id}" data-dir="-">−</button>
-            <div style="min-width:42px; text-align:center; font-weight:700;" id="val-${id}">${val}</div>
-            <button class="btn" data-step="${id}" data-dir="+">+</button>
+            <button class="btn" data-step="${key}" data-dir="-">−</button>
+            <div style="min-width:42px; text-align:center; font-weight:700;" id="val-${key}">${val}</div>
+            <button class="btn" data-step="${key}" data-dir="+">+</button>
           </div>
         </div>
       `;
@@ -166,9 +168,9 @@
       // builder
       const initial = { alcoholFreeTarget: 4, practicesTarget: 5, calmTarget: 3 };
       body.innerHTML = `
-        ${stepper('Alcohol-free days', initial.alcoholFreeTarget, 0, 7)}
-        ${stepper('Practices (total)', initial.practicesTarget, 0, 20)}
-        ${stepper('Calm interrupts', initial.calmTarget, 0, 30)}
+        ${stepper('Alcohol-free days', 'alcoholFreeTarget', initial.alcoholFreeTarget, 0, 7)}
+        ${stepper('Practices (total)', 'practicesTarget', initial.practicesTarget, 0, 20)}
+        ${stepper('Calm interrupts', 'calmTarget', initial.calmTarget, 0, 30)}
         <div class="hr"></div>
         <button class="btn primary full" id="wk-start">Start week</button>
       `;
@@ -176,9 +178,10 @@
       const state = {...initial};
       function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
       function renderVals(){
-        $('#val-Alcohol-free days').textContent = state.alcoholFreeTarget;
-        $('#val-Practices (total)').textContent = state.practicesTarget;
-        $('#val-Calm interrupts').textContent = state.calmTarget;
+        // Safe, stable ids
+        $('#val-alcoholFreeTarget').textContent = state.alcoholFreeTarget;
+        $('#val-practicesTarget').textContent = state.practicesTarget;
+        $('#val-calmTarget').textContent = state.calmTarget;
       }
       renderVals();
 
@@ -187,9 +190,9 @@
         if(!b) return;
         const key = b.dataset.step;
         const dir = b.dataset.dir === '+' ? 1 : -1;
-        if(key === 'Alcohol-free days') state.alcoholFreeTarget = clamp(state.alcoholFreeTarget + dir, 0, 7);
-        if(key === 'Practices (total)') state.practicesTarget = clamp(state.practicesTarget + dir, 0, 50);
-        if(key === 'Calm interrupts') state.calmTarget = clamp(state.calmTarget + dir, 0, 99);
+        if(key === 'alcoholFreeTarget') state.alcoholFreeTarget = clamp(state.alcoholFreeTarget + dir, 0, 7);
+        if(key === 'practicesTarget') state.practicesTarget = clamp(state.practicesTarget + dir, 0, 50);
+        if(key === 'calmTarget') state.calmTarget = clamp(state.calmTarget + dir, 0, 99);
         renderVals();
       });
 
