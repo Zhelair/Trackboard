@@ -229,7 +229,17 @@
         ? { status: "free" }
         : { status: "had", type: currentType, drinks: currentDrinks, note: currentNote };
 
-      await Store.putEntry(today, entry);
+      entry.date = today;
+      try{
+        await Store.putEntry(entry);
+      }catch(err){
+        if(String(err).includes('Locked')){
+          TrackboardUI.toast('Notebook is locked. Unlock to save.');
+          window.location.hash = '#unlock';
+          return;
+        }
+        throw err;
+      }
       TrackboardUI.toast("Saved.");
       setDirty(false);
       await renderWeek();
