@@ -51,7 +51,8 @@
   function summarizeWeek(entries){
     let moodSum=0, moodN=0;
     let poorSleep=0;
-    let freeDays=0, hadDays=0, drinksTotal=0;
+    let freeDays=0, hadDays=0, drinksTotal=0, alcoholLoggedDays=0;
+    let waitsStarted=0, waitsCompleted=0, waitsPassed=0;
     const byType = { beer:0, wine:0, spirits:0 };
     const tagCounts = {};
 
@@ -72,16 +73,27 @@
 
       // alcohol
       const a = e.alcohol || null;
-      if(!a || a.status === "free"){
-        freeDays += 1;
-      }else if(a.status === "had"){
-        hadDays += 1;
-        const drinks = Number(a.drinks||0) || 0;
-        drinksTotal += drinks;
-        const t = a.type;
-        if(t && byType.hasOwnProperty(t)) byType[t] += drinks;
-      }else{
-        // unknown -> treat as missing
+      if(a){
+        alcoholLoggedDays += 1;
+        if(a.status === "free"){
+          freeDays += 1;
+        }else if(a.status === "had"){
+          hadDays += 1;
+          const drinks = Number(a.drinks||0) || 0;
+          drinksTotal += drinks;
+          const t = a.type;
+          if(t && byType.hasOwnProperty(t)) byType[t] += drinks;
+        }
+      }
+
+      // craving waits
+      const waits = Array.isArray(e.cravingWaits) ? e.cravingWaits : [];
+      if(waits.length){
+        waitsStarted += waits.length;
+        for(const w of waits){
+          if(w && w.completed) waitsCompleted += 1;
+          if(w && w.outcome === 'passed') waitsPassed += 1;
+        }
       }
     }
 
@@ -92,7 +104,7 @@
       .slice(0,3)
       .map(([k])=>k);
 
-    return { avgMood, moodN, poorSleep, freeDays, hadDays, drinksTotal, byType, topTags };
+    return { avgMood, moodN, poorSleep, freeDays, hadDays, drinksTotal, byType, topTags, alcoholLoggedDays, waitsStarted, waitsCompleted, waitsPassed };
   }
 
   async function build(){
@@ -106,11 +118,11 @@
     // meters (gentle, not competitive)
     const mood01 = sum.moodN ? (sum.avgMood/5) : 0;
     const sleep01 = 1 - (sum.poorSleep/7);
-    const alcohol01 = clamp(sum.freeDays/7, 0, 1);
+    const alcohol01 = sum.alcoholLoggedDays ? clamp(sum.freeDays/7, 0, 1) : 0;
 
     const moodText = sum.moodN ? `${sum.avgMood.toFixed(1)} / 5` : "No mood yet";
     const sleepText = `${7 - sum.poorSleep} steady night(s)`;
-    const alcText = `${sum.freeDays} alcohol-free day(s)`;
+    const alcText = sum.alcoholLoggedDays ? `${sum.freeDays} alcohol-free day(s)` : "—";
 
     const alcLine = TYPE_OPTIONS.map(t=>{
       const n = sum.byType[t.key] || 0;
@@ -174,13 +186,26 @@
 
       <section class="card">
         <h3>Alcohol snapshot</h3>
-        <div class="muted">Drinks logged: <strong>${sum.drinksTotal}</strong></div>
+        <div class="muted">Drinks logged: <strong>${sum.alcoholLoggedDays ? sum.drinksTotal : "—"}</strong></div>
         <div class="mt">${alcLine}</div>
         <div class="muted tiny mt">Tip: log type + count on the Alcohol screen. Estimates are fine.</div>
       </section>
 
       <section class="card">
-        <h3>What showed up</h3>
+        
+      <section class="card">
+        <h3>Craving waits</h3>
+        <div class="muted">Logging the wait is the win.</div>
+        <div class="mt">
+          <div class="row" style="gap:14px; flex-wrap:wrap;">
+            <div><strong>${sum.waitsStarted}</strong> started</div>
+            <div><strong>${sum.waitsCompleted}</strong> completed</div>
+            <div><strong>${sum.waitsPassed}</strong> passed</div>
+          </div>
+        </div>
+      </section>
+
+      <h3>What showed up</h3>
         <div class="pillrow mt">
           ${(sum.topTags.length ? sum.topTags : ["No tags yet"]).map(t=>`<span class="pill ghost">${t}</span>`).join("")}
         </div>

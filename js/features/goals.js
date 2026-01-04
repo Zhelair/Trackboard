@@ -1,4 +1,7 @@
+
 (function(){
+  const $ = (sel, root=document)=> root.querySelector(sel);
+
   function isoWeekKey(d=new Date()){
     const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
     const dayNum = date.getUTCDay() || 7;
@@ -8,130 +11,232 @@
     return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
   }
 
+  function startOfWeekISO(date){
+    const d = new Date(date);
+    const day = (d.getDay() + 6) % 7; // Mon=0
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - day);
+    return d.toISOString().slice(0,10);
+  }
+
+  async function getWeekEntries(){
+    const today = new Date();
+    const start = startOfWeekISO(today);
+    const startD = new Date(start+"T00:00:00");
+    const entries = [];
+    for(let i=0;i<7;i++){
+      const d = new Date(startD);
+      d.setDate(startD.getDate()+i);
+      const iso = d.toISOString().slice(0,10);
+      const e = await Store.getEntry(iso);
+      if(e) entries.push(e);
+    }
+    return { start, entries };
+  }
+
+  async function getPracticesConfig(){
+    const cfg = await Store.getSetting('practices_config');
+    if(cfg && cfg.items && Array.isArray(cfg.items)) return cfg;
+    return null;
+  }
+
+  function countPractices(entries, cfg){
+    if(!cfg || !cfg.items) return 0;
+    const enabled = cfg.items.filter(it=>it.enabled);
+    let n = 0;
+    for(const e of entries){
+      const p = (e && e.practices) ? e.practices : {};
+      for(const it of enabled){
+        const v = p[it.id];
+        if(v === undefined || v === null) continue;
+        if(it.kind === 'bool'){
+          if(v) n += 1;
+        }else{
+          const c = Number(v)||0;
+          if(c>0) n += 1;
+        }
+      }
+    }
+    return n;
+  }
+
+  function countAlcoholFree(entries){
+    let n = 0;
+    for(const e of entries){
+      if(e.alcohol && e.alcohol.status === 'free') n += 1;
+    }
+    return n;
+  }
+
+  function countCalm(entries){
+    let n = 0;
+    for(const e of entries){
+      n += Number(e.calmInterrupts||0) || 0;
+    }
+    return n;
+  }
+
+  function bar(label, cur, tgt){
+    const pct = tgt ? Math.max(0, Math.min(1, cur/tgt)) : 0;
+    const txt = tgt ? `${cur} / ${tgt}` : `${cur}`;
+    return `
+      <div class="meterblock">
+        <div class="meterhead"><div>${label}</div><div class="muted">${txt}</div></div>
+        <div class="meter"><div class="meterfill" style="width:${(pct*100).toFixed(1)}%"></div></div>
+      </div>`;
+  }
+
   TrackboardRouter.register('goals', async (mount)=>{
-    document.getElementById('brand-subtitle').textContent = 'Goals · Private · Stored on this device';
+    TrackboardUI.setSubtitle('Goals · Private · Stored on this device');
 
     const wk = isoWeekKey(new Date());
-    const existing = await Store.getWeek(wk) || {weekKey:wk};
+    const weekRec = await Store.getWeek(wk) || {weekKey:wk};
 
+    const { start, entries } = await getWeekEntries();
+    const cfg = await getPracticesConfig();
 
-// Carry-forward from previous week (opt-in)
-const prevKey = isoWeekKey(new Date(Date.now() - 7*86400000));
-const prev = await Store.getWeek(prevKey);
-const hasPrevCarry = prev && prev.carryForward && (prev.intention||'').trim().length;
+    const stats = {
+      alcoholFree: countAlcoholFree(entries),
+      practices: countPractices(entries, cfg),
+      calm: countCalm(entries)
+    };
 
+    const good = weekRec.goodEnough || null;
 
-    const stack = UI.h('div',{class:'stack'},[]);
+    mount.innerHTML = `
+      <div class="page">
+        <section class="card soft">
+          <h2>This week</h2>
+          <p class="muted">Goals are direction, not obligation.</p>
+        </section>
 
-    stack.appendChild(UI.h('div',{class:'card soft'},[
-      UI.h('div',{class:'h2'},['This week']),
-      UI.h('div',{class:'small'},['Goals are direction, not obligation.'])
-    ]));
+        <section class="card">
+          <h3>What would make this week feel good enough?</h3>
+          <div class="muted">One or two short sentences.</div>
+          <textarea id="wk-intention" class="textarea mt" rows="2" placeholder="e.g., Enough sleep, less pressure">${(weekRec.intention||'')}</textarea>
+        </section>
 
-    
-// Optional: show last week's intention as a gentle starting point
-let lastWeekCard = null;
-if(hasPrevCarry){
-  lastWeekCard = UI.h('div',{class:'card soft', id:'last-week-card'},[
-    UI.h('div',{class:'h2'},['Last week']),
-    UI.h('div',{class:'small', style:'white-space:pre-wrap;margin-top:6px;'},[prev.intention.trim()]),
-    UI.h('div',{class:'row', style:'margin-top:10px'},[
-      UI.h('button',{class:'btn small', type:'button', id:'btn-use-prev'},['Use again']),
-      UI.h('button',{class:'btn small', type:'button', id:'btn-start-fresh'},['Start fresh'])
-    ])
-  ]);
-}
+        <section class="card" id="wk-goodenough">
+          <h3>Good enough week</h3>
+          <div class="muted">Pick a minimum win. Not perfection.</div>
 
+          <div class="mt" id="wk-good-body"></div>
+        </section>
 
-const intentionCard = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h2'},['What would make this week feel good enough?']),
-      UI.h('div',{class:'small'},['One or two short sentences.']),
-      UI.h('textarea',{id:'wk-intention', placeholder:'Example: Keep evenings calm. Apply to two jobs.'},[])
-    ]);
+        <section class="card" id="wk-check">
+          <h3>Gentle check</h3>
+          <div class="muted">How did this week go?</div>
+          <div class="row mt" style="gap:10px; flex-wrap:wrap;">
+            <button class="btn" data-ref="better">Better than expected</button>
+            <button class="btn" data-ref="right">About right</button>
+            <button class="btn" data-ref="hard">Hard, but I showed up</button>
+          </div>
+          <div class="mt muted" id="wk-summary">Good enough is good.</div>
+        </section>
 
-    const checkCard = UI.h('div',{class:'card soft'},[
-      UI.h('div',{class:'h2'},['Gentle check']),
-      UI.h('div',{class:'small'},['How did this week go?']),
-      UI.h('div',{class:'row', style:'margin-top:8px'},[
-        UI.h('button',{class:'btn small', type:'button', 'data-ref':'better'},['Better than expected']),
-        UI.h('button',{class:'btn small', type:'button', 'data-ref':'right'},['About right']),
-        UI.h('button',{class:'btn small', type:'button', 'data-ref':'hard'},['Harder than I hoped'])
-      ])
-    ]);
+        <section class="card">
+          <h3>Carry forward</h3>
+          <label class="row" style="gap:10px;">
+            <input type="checkbox" id="wk-carry" ${weekRec.carryForward ? 'checked':''}/>
+            <span class="muted">Keep this intention for next week.</span>
+          </label>
+        </section>
 
-    const carryCard = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h2'},['Carry forward']),
-      UI.h('label',{class:'small', style:'display:flex;gap:10px;align-items:center;'},[
-        UI.h('input',{type:'checkbox', id:'wk-carry'}),
-        UI.h('span',{},['Keep this intention for next week.'])
-      ])
-    ]);
+        <button class="btn primary full" id="wk-save">Save</button>
+      </div>
+    `;
 
-    const summaryCard = UI.h('div',{class:'card soft'},[
-      UI.h('div',{class:'h2'},['Good enough week']),
-      UI.h('div',{class:'small', id:'wk-summary'},['You stayed engaged. That counts.'])
-    ]);
+    // Good enough UI
+    const body = $('#wk-good-body');
 
-    const actions = UI.h('div',{class:'card soft'},[
-      UI.h('button',{class:'btn primary full', type:'button', id:'wk-save'},['Save'])
-    ]);
+    function stepper(id, val, min, max){
+      return `
+        <div class="row mt" style="justify-content:space-between; gap:12px; flex-wrap:wrap;">
+          <div class="muted">${id}</div>
+          <div class="row" style="gap:8px;">
+            <button class="btn" data-step="${id}" data-dir="-">−</button>
+            <div style="min-width:42px; text-align:center; font-weight:700;" id="val-${id}">${val}</div>
+            <button class="btn" data-step="${id}" data-dir="+">+</button>
+          </div>
+        </div>
+      `;
+    }
 
-    stack.appendChild(intentionCard);
-    stack.appendChild(checkCard);
-    stack.appendChild(carryCard);
-    stack.appendChild(summaryCard);
-    stack.appendChild(actions);
-    mount.appendChild(stack);
+    if(!good){
+      // builder
+      const initial = { alcoholFreeTarget: 4, practicesTarget: 5, calmTarget: 3 };
+      body.innerHTML = `
+        ${stepper('Alcohol-free days', initial.alcoholFreeTarget, 0, 7)}
+        ${stepper('Practices (total)', initial.practicesTarget, 0, 20)}
+        ${stepper('Calm interrupts', initial.calmTarget, 0, 30)}
+        <div class="hr"></div>
+        <button class="btn primary full" id="wk-start">Start week</button>
+      `;
 
-    // Fill
+      const state = {...initial};
+      function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+      function renderVals(){
+        $('#val-Alcohol-free days').textContent = state.alcoholFreeTarget;
+        $('#val-Practices (total)').textContent = state.practicesTarget;
+        $('#val-Calm interrupts').textContent = state.calmTarget;
+      }
+      renderVals();
 
-// Prefill from last week if user opted to carry forward and this week is empty
-const intentionInput = document.getElementById('wk-intention');
-if(hasPrevCarry && !((existing.intention||'').trim().length)){
-  existing.intention = prev.intention.trim();
-  intentionInput.value = existing.intention;
-}
+      body.addEventListener('click', (e)=>{
+        const b = e.target.closest('[data-step]');
+        if(!b) return;
+        const key = b.dataset.step;
+        const dir = b.dataset.dir === '+' ? 1 : -1;
+        if(key === 'Alcohol-free days') state.alcoholFreeTarget = clamp(state.alcoholFreeTarget + dir, 0, 7);
+        if(key === 'Practices (total)') state.practicesTarget = clamp(state.practicesTarget + dir, 0, 50);
+        if(key === 'Calm interrupts') state.calmTarget = clamp(state.calmTarget + dir, 0, 99);
+        renderVals();
+      });
 
-if(lastWeekCard){
-  stack.insertBefore(lastWeekCard, intentionCard);
-  document.getElementById('btn-use-prev').addEventListener('click', ()=>{
-    intentionInput.value = prev.intention.trim();
-    existing.intention = intentionInput.value;
-    UI.toast('Loaded last week. You can edit it.');
-  });
-  document.getElementById('btn-start-fresh').addEventListener('click', ()=>{
-    intentionInput.value = '';
-    existing.intention = '';
-    UI.toast('Starting fresh.');
-  });
-}
+      $('#wk-start').addEventListener('click', async ()=>{
+        weekRec.goodEnough = {...state};
+        weekRec.startedAt = Date.now();
+        weekRec.intention = $('#wk-intention').value.trim();
+        await Store.putWeek(weekRec);
+        UI.toast('Week started.');
+        TrackboardRouter.go('goals');
+      });
 
-    if(!intentionInput.value) intentionInput.value = existing.intention || '';
-    document.getElementById('wk-carry').checked = !!existing.carryForward;
+    }else{
+      // progress view
+      body.innerHTML = `
+        ${bar('Alcohol-free', stats.alcoholFree, good.alcoholFreeTarget)}
+        ${bar('Practices', stats.practices, good.practicesTarget)}
+        ${bar('Calm interrupts', stats.calm, good.calmTarget)}
+        <div class="muted">You’re still in the game.</div>
+      `;
+    }
 
+    // Reflection
     function setReflection(val){
-      existing.reflection = val;
-      checkCard.querySelectorAll('[data-ref]').forEach(b=>{
+      weekRec.reflection = val;
+      $('#wk-check').querySelectorAll('[data-ref]').forEach(b=>{
         b.classList.toggle('primary', b.dataset.ref === val);
       });
-      const s = document.getElementById('wk-summary');
+      const s = $('#wk-summary');
       if(val === 'better') s.textContent = 'Nice. Keep it simple and repeat what worked.';
       else if(val === 'right') s.textContent = 'That’s a solid week. Good enough is good.';
       else if(val === 'hard') s.textContent = 'Hard weeks count too. Keep the bar kind.';
       else s.textContent = 'You stayed engaged. That counts.';
     }
-    if(existing.reflection) setReflection(existing.reflection);
+    if(weekRec.reflection) setReflection(weekRec.reflection);
 
-    checkCard.addEventListener('click', (e)=>{
+    $('#wk-check').addEventListener('click', (e)=>{
       const btn = e.target.closest('[data-ref]');
       if(!btn) return;
       setReflection(btn.dataset.ref);
     });
 
-    document.getElementById('wk-save').addEventListener('click', async ()=>{
-      existing.intention = document.getElementById('wk-intention').value.trim();
-      existing.carryForward = document.getElementById('wk-carry').checked;
-      await Store.putWeek(existing);
+    // Save
+    $('#wk-save').addEventListener('click', async ()=>{
+      weekRec.intention = $('#wk-intention').value.trim();
+      weekRec.carryForward = $('#wk-carry').checked;
+      await Store.putWeek(weekRec);
       UI.toast('Saved.');
     });
   });

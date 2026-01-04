@@ -227,6 +227,26 @@
         html += enabled.map(it=> gridForItem(it, week)).join('');
       }
 
+
+      // Week mini summary (all tabs)
+      const totals = {Body:0, Mind:0, Life:0};
+      for(const e of Object.values(week.map)){
+        const p = (e && e.practices) ? e.practices : {};
+        for(const it of cfg.items){
+          if(!it.enabled) continue;
+          const v = p[it.id];
+          if(v === undefined || v === null) continue;
+          if(it.kind === 'bool'){
+            if(v) totals[it.group] += 1;
+          }else{
+            const n = Number(v)||0;
+            if(n>0) totals[it.group] += 1;
+          }
+        }
+      }
+      const totalLine = `This week: Body ${totals.Body} · Mind ${totals.Mind} · Life ${totals.Life}`;
+      html += `<div class="card soft"><div class="small muted">${totalLine}</div></div>`;
+
       content.innerHTML = html;
 
       // wire controls
@@ -296,7 +316,10 @@
     });
 
     function slugify(s){
-      return s.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,32) || ('custom_'+Math.random().toString(16).slice(2,8));
+      const base = (s||'').toLowerCase().trim()
+        .replace(/[^a-z0-9]+/g,'_')
+        .replace(/^_+|_+$/g,'');
+      return (base.slice(0,32) || ('custom_'+Math.random().toString(16).slice(2,8)));
     }
 
     async function addCustom(kind){

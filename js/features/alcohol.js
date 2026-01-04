@@ -26,11 +26,15 @@
     let freeDays = 0;
     let hadDays = 0;
     let drinksTotal = 0;
+    let loggedDays = 0;
     const byType = { beer:0, wine:0, spirits:0 };
 
     for(const e of entries){
       const a = e.alcohol || null;
-      if(!a || a.status === "free"){
+      if(!a) continue; // missing is unknown
+      loggedDays += 1;
+
+      if(a.status === "free"){
         freeDays += 1;
         continue;
       }
@@ -42,7 +46,8 @@
         if(t && byType.hasOwnProperty(t)) byType[t] += drinks;
       }
     }
-    return { freeDays, hadDays, drinksTotal, byType };
+
+    return { freeDays, hadDays, drinksTotal, byType, loggedDays };
   }
 
   function typeButtonsHtml(selectedKey){
@@ -178,6 +183,7 @@
     async function loadToday(){
       const today = TrackboardUI.todayISO();
       const entry = await Store.getEntry(today) || {};
+      const hasSaved = !!entry.alcohol;
       const a = entry.alcohol || { status: "free" };
       currentChoice = (a.status === "had") ? "had" : "free";
       currentType = a.type || "beer";
@@ -185,6 +191,7 @@
       currentNote = a.note || "";
       setChoice(currentChoice);
       setDirty(false);
+      statusEl.textContent = hasSaved ? 'Saved ✓' : '';
       await renderWeek();
     }
 
@@ -206,9 +213,9 @@
       $("#alc-week-body", root).innerHTML = `
         <div class="weekline">
           <div><strong>${range}</strong></div>
-          <div class="badge ${toneClass}">${sum.freeDays} alcohol-free day(s)</div>
+          <div class="badge ${toneClass}">${sum.loggedDays ? (sum.freeDays + ' alcohol-free day(s)') : 'No alcohol logs yet'}</div>
         </div>
-        <div class="muted mt">Drinks logged: <strong>${sum.drinksTotal}</strong></div>
+        <div class="muted mt">Drinks logged: <strong>${sum.loggedDays ? sum.drinksTotal : '—'}</strong></div>
         <div class="mt">${lines}</div>
       `;
     }
@@ -242,13 +249,80 @@
       }
       TrackboardUI.toast("Saved.");
       setDirty(false);
+      statusEl.textContent = "Saved ✓";
       await renderWeek();
     });
 
     // 10-min wait
-    $("#alc-wait", root).addEventListener("click", ()=>{
-      TrackboardUI.toast("Timer started. Come back in 10 minutes.");
-      TrackboardUI.startTimer(10*60);
+    function openWaitResultModal(onPick){
+      let modal = document.getElementById('tb-wait-result');
+      if(!modal){
+        modal = document.createElement('div');
+        modal.id = 'tb-wait-result';
+        modal.className = 'modal';
+        modal.setAttribute('aria-hidden','true');
+        modal.innerHTML = `
+          <div class="modal-card" style="max-width:520px;">
+            <div class="modal-head">
+              <h3>What happened?</h3>
+              <button class="icon-btn" id="tb-wait-close" aria-label="Close">✕</button>
+            </div>
+            <div class="muted">Either answer is okay. Logging the wait is the win.</div>
+            <div class="row mt" style="gap:10px; flex-wrap:wrap;">
+              <button class="btn primary" id="tb-wait-passed">Craving passed</button>
+              <button class="btn" id="tb-wait-still">Still want it</button>
+            </div>
+          </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (e)=>{ if(e.target===modal) close(); });
+        modal.querySelector('#tb-wait-close').addEventListener('click', close);
+        function close(){
+          modal.classList.remove('open');
+          modal.setAttribute('aria-hidden','true');
+        }
+      }
+      function close(){
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden','true');
+      }
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden','false');
+      modal.querySelector('#tb-wait-passed').onclick = ()=>{ close(); onPick('passed'); };
+      modal.querySelector('#tb-wait-still').onclick = ()=>{ close(); onPick('still'); };
+      return { close };
+    }
+
+    $("#alc-wait", root).addEventListener("click", async ()=>{
+      const startedAt = Date.now();
+      TrackboardUI.toast("Timer started.");
+      TrackboardUI.openTimerModal(10*60, async (res)=>{
+        // After timer (or early finish), ask outcome and store it
+        openWaitResultModal(async (outcome)=>{
+          const today = TrackboardUI.todayISO();
+          const entry = await Store.getEntry(today) || {date: today};
+          entry.date = today;
+          entry.cravingWaits = Array.isArray(entry.cravingWaits) ? entry.cravingWaits : [];
+          entry.cravingWaits.push({
+            startedAt,
+            endedAt: Date.now(),
+            seconds: 10*60,
+            completed: !!res.completed,
+            outcome
+          });
+          try{
+            await Store.putEntry(entry);
+          }catch(err){
+            if(String(err).includes('Locked')){
+              TrackboardUI.toast('Notebook is locked. Unlock to save.');
+              window.location.hash = '#unlock';
+              return;
+            }
+            throw err;
+          }
+          TrackboardUI.toast("Wait logged.");
+          await renderWeek();
+        });
+      });
     });
 
     // initial
