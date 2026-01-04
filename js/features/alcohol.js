@@ -1,226 +1,256 @@
 (function(){
-  TrackboardRouter.register('alcohol', async (mount)=>{
-    document.getElementById('brand-subtitle').textContent = 'Alcohol · Private · Stored on this device';
+  const $ = (sel, root=document) => root.querySelector(sel);
 
-    const key = Store.todayKey();
-    const existing = await Store.getEntry(key) || {date:key};
+  const TYPE_OPTIONS = [
+    { key: "beer", label: "Beer", emoji: "🍺" },
+    { key: "wine", label: "Wine", emoji: "🍷" },
+    { key: "spirits", label: "Spirits", emoji: "🥃" },
+  ];
 
-    const stack = UI.h('div',{class:'stack'},[]);
-
-    stack.appendChild(UI.h('div',{class:'card soft'},[
-      UI.h('div',{class:'h2'},['Just note what happened today.']),
-      UI.h('div',{class:'small'},['No judgement. No consequences.'])
-    ]));
-
-    // Today card
-    const todayCard = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h2'},['Alcohol today?']),
-      UI.h('div',{class:'row', style:'margin-top:8px'},[
-        UI.h('button',{type:'button', class:'btn full'+(existing.alcohol==='free'?' primary':''), id:'btn-free'},['Alcohol-free']),
-        UI.h('button',{type:'button', class:'btn full'+(existing.alcohol==='had'?' primary':''), id:'btn-had'},['Had alcohol'])
-      ]),
-      UI.h('div',{id:'had-more'})
-    ]);
-
-    // Context when had
-    const ctxWrap = UI.h('div',{class:'col', style:'margin-top:10px;display:none;'},[]);
-    const whyCard = UI.h('div',{class:'card soft'},[
-      UI.h('div',{class:'h2'},['What played a role?']),
-      UI.h('div',{class:'small'},['Optional.']),
-    ]);
-    const reasons = ['stress','social','boredom','fatigue','habit'];
-    const selected = new Set(existing.alcoholWhy || []);
-    const chips = UI.h('div',{class:'pillrow'},[]);
-    function renderWhy(){
-      chips.innerHTML='';
-      reasons.forEach(r=>{
-        chips.appendChild(UI.h('button',{type:'button', class:'pill'+(selected.has(r)?' active':''), 'data-why':r},[r]));
-      });
-      chips.appendChild(UI.h('button',{type:'button', class:'pill', id:'btn-addwhy'},['+ other']));
-    }
-    renderWhy();
-    whyCard.appendChild(chips);
-
-    const noteCard = UI.h('div',{class:'card soft'},[
-  UI.h('div',{class:'h2'},['Details (optional)']),
-  UI.h('div',{class:'small'},['If you want, add a little context. Keep it simple.']),
-  UI.h('div',{class:'grid2'},[
-    UI.h('div',{},[
-      UI.h('div',{class:'small'},['Quantity']),
-      UI.h('input',{type:'text', id:'alcohol-qty', placeholder:'e.g., 1 beer / 2 glasses'})
-    ]),
-    UI.h('div',{},[
-      UI.h('div',{class:'small'},['Note']),
-      UI.h('input',{type:'text', id:'alcohol-note', placeholder:'Short note (optional).'})
-    ])
-  ])
-]);
-
-    ctxWrap.appendChild(whyCard);
-    ctxWrap.appendChild(noteCard);
-
-    // Craving card
-    const craveCard = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h2'},['If a craving shows up']),
-      UI.h('div',{class:'small'},['Cravings pass on their own. Waiting is enough.']),
-      UI.h('button',{type:'button', class:'btn', id:'btn-wait'},['Wait 10 minutes']),
-      UI.h('div',{id:'wait-area', class:'small', style:'margin-top:8px;display:none;'},[])
-    ]);
-
-    // Quiet progress
-    const entries = await Store.getAllEntries();
-    const week = UI.weekBounds(new Date());
-    const inWeek = entries.filter(e=> UI.inRange(e.date, week.start, week.end));
-    const alcoholFree = inWeek.filter(e=> e.alcohol === 'free').length;
-    const sleepBetter = inWeek.filter(e=> e.alcohol === 'free' && !e.poorSleep).length;
-
-    const progress = UI.h('div',{class:'card soft'},[
-      UI.h('div',{class:'h2'},['Quiet progress']),
-      UI.h('div',{class:'small'},[`Alcohol-free days this week: ${alcoholFree}`]),
-      UI.h('div',{class:'small'},[`Better-sleep nights (approx.): ${sleepBetter}`]),
-      UI.h('div',{class:'small'},['Money saved will appear once you set a baseline in Settings (optional).'])
-    ]);
-
-const saveCard = UI.h('div',{class:'card'},[
-  UI.h('div',{class:'row', style:'justify-content:space-between;align-items:center;'},[
-    UI.h('div',{class:'small', id:'alcohol-save-hint'},['No unsaved changes.']),
-    UI.h('button',{type:'button', class:'btn primary', id:'btn-save-alcohol', disabled:true},['Save today'])
-  ])
-]);
-
-    stack.appendChild(todayCard);
-    stack.appendChild(ctxWrap);
-    stack.appendChild(saveCard);
-    stack.appendChild(craveCard);
-    stack.appendChild(progress);
-    mount.appendChild(stack);
-
-const saveBtn = document.getElementById('btn-save-alcohol');
-const saveHint = document.getElementById('alcohol-save-hint');
-let dirty = false;
-function setDirty(on=true){
-  dirty = on;
-  saveBtn.disabled = !dirty;
-  if(saveHint){
-    saveHint.textContent = dirty ? 'Not saved yet.' : 'No unsaved changes.';
+  function startOfWeekISO(date){
+    const d = new Date(date);
+    const day = (d.getDay() + 6) % 7; // Mon=0
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - day);
+    return d.toISOString().slice(0,10);
   }
-}
 
-    // Fill
-    document.getElementById('alcohol-qty').value = existing.alcoholQty || '';
-    document.getElementById('alcohol-note').value = existing.alcoholNote || '';
+  function fmtWeekRange(weekStartISO){
+    const d0 = new Date(weekStartISO+"T00:00:00");
+    const d1 = new Date(d0); d1.setDate(d1.getDate()+6);
+    const opts = { month: "short", day: "numeric" };
+    return `${d0.toLocaleDateString(undefined, opts)} – ${d1.toLocaleDateString(undefined, opts)}`;
+  }
 
-    function showHad(show){
-      ctxWrap.style.display = show ? 'flex' : 'none';
+  function summarizeWeek(entries){
+    let freeDays = 0;
+    let hadDays = 0;
+    let drinksTotal = 0;
+    const byType = { beer:0, wine:0, spirits:0 };
+
+    for(const e of entries){
+      const a = e.alcohol || null;
+      if(!a || a.status === "free"){
+        freeDays += 1;
+        continue;
+      }
+      if(a.status === "had"){
+        hadDays += 1;
+        const drinks = Number(a.drinks || 0) || 0;
+        drinksTotal += drinks;
+        const t = a.type;
+        if(t && byType.hasOwnProperty(t)) byType[t] += drinks;
+      }
     }
-showHad(existing.alcohol === 'had');
+    return { freeDays, hadDays, drinksTotal, byType };
+  }
 
-// Initial state
-if(existing.alcohol === 'free'){
-  document.getElementById('btn-free').classList.add('primary');
-  document.getElementById('btn-had').classList.remove('primary');
-} else if(existing.alcohol === 'had'){
-  document.getElementById('btn-had').classList.add('primary');
-  document.getElementById('btn-free').classList.remove('primary');
-} else {
-  document.getElementById('btn-free').classList.remove('primary');
-  document.getElementById('btn-had').classList.remove('primary');
-}
-setDirty(false);
+  function typeButtonsHtml(selectedKey){
+    return TYPE_OPTIONS.map(t => {
+      const active = selectedKey === t.key ? "active" : "";
+      return `<button class="pill ${active}" type="button" data-type="${t.key}" aria-pressed="${selectedKey===t.key}">
+        <span class="emoji" aria-hidden="true">${t.emoji}</span> ${t.label}
+      </button>`;
+    }).join("");
+  }
 
-// Buttons
+  function drinksStepperHtml(val){
+    const v = Math.min(20, Math.max(1, Number(val||1) || 1));
+    return `
+      <div class="stepper" role="group" aria-label="Drinks">
+        <button class="stepper-btn" type="button" data-step="-1" aria-label="Decrease">−</button>
+        <div class="stepper-val" aria-live="polite"><span id="alc-drinks">${v}</span> drink(s)</div>
+        <button class="stepper-btn" type="button" data-step="1" aria-label="Increase">+</button>
+      </div>
+      <div class="muted tiny">Rough estimate is fine. One “drink” = one serving.</div>
+    `;
+  }
 
-    document.getElementById('btn-free').addEventListener('click', ()=>{
-  existing.alcohol = 'free';
-  showHad(false);
-  document.getElementById('btn-free').classList.add('primary');
-  document.getElementById('btn-had').classList.remove('primary');
-  setDirty(true);
-  UI.toast('Selected. Tap “Save today” to store.');
-});
+  function renderAlcohol(){
+    const root = document.createElement("div");
+    root.innerHTML = `
+      <section class="card">
+        <h2>Just note what happened today.</h2>
+        <p class="muted">No judgement. No consequences.</p>
+      </section>
 
-    document.getElementById('btn-had').addEventListener('click', ()=>{
-  existing.alcohol = 'had';
-  showHad(true);
-  document.getElementById('btn-had').classList.add('primary');
-  document.getElementById('btn-free').classList.remove('primary');
-  setDirty(true);
-  UI.toast('Selected. Tap “Save today” to store.');
-});
+      <section class="card">
+        <h3>Alcohol today?</h3>
+        <div class="seg">
+          <button class="seg-btn" data-choice="free" type="button">Alcohol-free</button>
+          <button class="seg-btn" data-choice="had" type="button">Had alcohol</button>
+        </div>
 
+        <div id="alc-details" class="mt"></div>
 
+        <div class="row mt">
+          <div class="muted" id="alc-status">No unsaved changes.</div>
+          <button class="btn primary" id="alc-save" type="button">Save today</button>
+        </div>
+      </section>
 
-// Save
-saveBtn.addEventListener('click', async ()=>{
-  // Always sync latest fields (in case user didn't type after last input event)
-  existing.alcoholQty = (document.getElementById('alcohol-qty')?.value || '').trim();
-  existing.alcoholNote = (document.getElementById('alcohol-note')?.value || '').trim();
-  existing.alcoholWhy = Array.from(selected);
+      <section class="card">
+        <h3>If a craving shows up</h3>
+        <p class="muted">Cravings pass on their own. Waiting is enough.</p>
+        <button class="btn" id="alc-wait" type="button">Wait 10 minutes</button>
+      </section>
 
-  await Store.putEntry(existing);
-  setDirty(false);
-  UI.toast('Saved.');
-});
+      <section class="card" id="alc-week">
+        <h3>Weekly view</h3>
+        <p class="muted">A simple snapshot. It updates from what you log.</p>
+        <div id="alc-week-body" class="mt"></div>
+      </section>
+    `;
 
-    whyCard.addEventListener('click', async (e)=>{
-      const btn = e.target.closest('[data-why]');
-      if(btn){
-        const t = btn.dataset.why;
-        if(selected.has(t)) selected.delete(t);
-        else selected.add(t);
-        existing.alcoholWhy = Array.from(selected);
-        renderWhy();
-        setDirty(true);
-      }
-      if(e.target && e.target.id === 'btn-addwhy'){
-        const v = prompt('Add a short word or phrase:');
-        if(v){
-          const t = v.trim().slice(0,24);
-          if(t){
-            selected.add(t);
-            existing.alcoholWhy = Array.from(selected);
-            renderWhy();
+    const details = $("#alc-details", root);
+    const statusEl = $("#alc-status", root);
+    const saveBtn = $("#alc-save", root);
+
+    let dirty = false;
+    let currentChoice = "free";
+    let currentType = "beer";
+    let currentDrinks = 1;
+    let currentNote = "";
+
+    function setDirty(v){
+      dirty = v;
+      statusEl.textContent = dirty ? "Unsaved changes." : "No unsaved changes.";
+      saveBtn.disabled = !dirty;
+    }
+
+    function setChoice(choice){
+      currentChoice = choice;
+      root.querySelectorAll(".seg-btn").forEach(b=>{
+        b.classList.toggle("active", b.dataset.choice === choice);
+        b.setAttribute("aria-pressed", b.dataset.choice === choice ? "true" : "false");
+      });
+
+      if(choice === "free"){
+        details.innerHTML = `<p class="muted">That’s it. Nothing more needed.</p>`;
+      }else{
+        details.innerHTML = `
+          <div class="grid2">
+            <div>
+              <div class="label">Type</div>
+              <div class="pillrow" id="alc-types">${typeButtonsHtml(currentType)}</div>
+            </div>
+            <div>
+              <div class="label">How many?</div>
+              <div id="alc-step">${drinksStepperHtml(currentDrinks)}</div>
+            </div>
+          </div>
+
+          <div class="mt">
+            <div class="label">Optional note</div>
+            <input id="alc-note" class="input" type="text" placeholder="Example: with dinner, celebration, stress" value="${(currentNote||"").replace(/"/g,'&quot;')}" />
+          </div>
+        `;
+
+        // type buttons
+        $("#alc-types", details).addEventListener("click", (e)=>{
+          const btn = e.target.closest("button[data-type]");
+          if(!btn) return;
+          currentType = btn.dataset.type;
+          btn.parentElement.querySelectorAll("button[data-type]").forEach(b=>b.classList.toggle("active", b.dataset.type===currentType));
+          setDirty(true);
+        });
+
+        // stepper
+        details.querySelectorAll(".stepper-btn").forEach(b=>{
+          b.addEventListener("click", ()=>{
+            const delta = Number(b.dataset.step || 0);
+            currentDrinks = Math.min(20, Math.max(1, currentDrinks + delta));
+            const vEl = details.querySelector("#alc-drinks");
+            if(vEl) vEl.textContent = String(currentDrinks);
             setDirty(true);
-          }
-        }
-      }
-    });
-
-    function syncDetailFields(){
-  existing.alcoholQty = document.getElementById('alcohol-qty').value.trim();
-  existing.alcoholNote = document.getElementById('alcohol-note').value.trim();
-  setDirty(true);
-}
-document.getElementById('alcohol-qty').addEventListener('input', syncDetailFields);
-document.getElementById('alcohol-note').addEventListener('input', syncDetailFields);
-
-    document.getElementById('btn-wait').addEventListener('click', ()=>{
-      const area = document.getElementById('wait-area');
-      area.style.display = 'block';
-      const start = Date.now();
-      const dur = 10*60*1000;
-      area.textContent = 'Waiting…';
-      const t = setInterval(()=>{
-        const left = dur - (Date.now()-start);
-        if(left <= 0){
-          clearInterval(t);
-          area.innerHTML = '';
-          area.appendChild(UI.h('div',{},['How is it now?']));
-          const row = UI.h('div',{class:'row', style:'margin-top:6px'},[
-            UI.h('button',{class:'btn small', type:'button'},['Better']),
-            UI.h('button',{class:'btn small', type:'button'},['Same']),
-            UI.h('button',{class:'btn small', type:'button'},['Worse'])
-          ]);
-          row.addEventListener('click', ()=>{
-            UI.toast('Noted.');
-            area.style.display = 'none';
           });
-          area.appendChild(row);
-        } else {
-          const m = Math.ceil(left/60000);
-          area.textContent = `Waiting… ${m} min`;
-        }
-      }, 15000);
+        });
+
+        // note
+        const note = $("#alc-note", details);
+        note.addEventListener("input", ()=>{
+          currentNote = note.value.slice(0, 160);
+          setDirty(true);
+        });
+      }
+    }
+
+    async function loadToday(){
+      const today = TrackboardUI.todayISO();
+      const entry = await Store.getEntry(today) || {};
+      const a = entry.alcohol || { status: "free" };
+      currentChoice = (a.status === "had") ? "had" : "free";
+      currentType = a.type || "beer";
+      currentDrinks = Number(a.drinks || 1) || 1;
+      currentNote = a.note || "";
+      setChoice(currentChoice);
+      setDirty(false);
+      await renderWeek();
+    }
+
+    async function renderWeek(){
+      const today = new Date();
+      const weekStart = startOfWeekISO(today);
+      const entries = await Store.getEntriesForWeek(weekStart);
+      const sum = summarizeWeek(entries);
+      const range = fmtWeekRange(weekStart);
+
+      const lines = TYPE_OPTIONS.map(t=>{
+        const n = sum.byType[t.key] || 0;
+        const faded = n ? "" : "muted";
+        return `<span class="${faded}" title="${t.label}">${t.emoji} ${n}</span>`;
+      }).join(" · ");
+
+      const toneClass = sum.hadDays === 0 ? "good" : (sum.hadDays <= 2 ? "ok" : "warn");
+
+      $("#alc-week-body", root).innerHTML = `
+        <div class="weekline">
+          <div><strong>${range}</strong></div>
+          <div class="badge ${toneClass}">${sum.freeDays} alcohol-free day(s)</div>
+        </div>
+        <div class="muted mt">Drinks logged: <strong>${sum.drinksTotal}</strong></div>
+        <div class="mt">${lines}</div>
+      `;
+    }
+
+    // wire choice buttons
+    root.querySelector(".seg").addEventListener("click", (e)=>{
+      const btn = e.target.closest(".seg-btn");
+      if(!btn) return;
+      setChoice(btn.dataset.choice);
+      setDirty(true);
     });
+
+    // save
+    saveBtn.addEventListener("click", async ()=>{
+      const today = TrackboardUI.todayISO();
+      const entry = await Store.getEntry(today) || {};
+      entry.alcohol = (currentChoice === "free")
+        ? { status: "free" }
+        : { status: "had", type: currentType, drinks: currentDrinks, note: currentNote };
+
+      await Store.putEntry(today, entry);
+      TrackboardUI.toast("Saved.");
+      setDirty(false);
+      await renderWeek();
+    });
+
+    // 10-min wait
+    $("#alc-wait", root).addEventListener("click", ()=>{
+      TrackboardUI.toast("Timer started. Come back in 10 minutes.");
+      TrackboardUI.startTimer(10*60);
+    });
+
+    // initial
+    loadToday();
+
+    return root;
+  }
+
+  TrackboardRouter.register("alcohol", async () => {
+    const view = document.getElementById("view");
+    view.appendChild(renderAlcohol());
+    TrackboardUI.setActiveNav("alcohol");
+    TrackboardUI.setSubtitle("Alcohol · Private · Stored on this device");
   });
 })();

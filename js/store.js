@@ -162,6 +162,22 @@
     return _putPlainEntry(entry);
   }
 
+
+async function getEntriesForWeek(weekStartISO){
+  // weekStartISO: YYYY-MM-DD (Monday)
+  const out = [];
+  const d0 = new Date(weekStartISO + "T00:00:00");
+  for(let i=0;i<7;i++){
+    const d = new Date(d0);
+    d.setDate(d.getDate()+i);
+    const iso = d.toISOString().slice(0,10);
+    const e = await getEntry(iso);
+    if(e) out.push(e);
+    else out.push({ date: iso });
+  }
+  return out;
+}
+
   async function getAllEntries(){
     const sec = await getSetting('security');
     if(sec && sec.enabled){
@@ -217,6 +233,8 @@
   }
 
   window.Store = {
+  getEntriesForWeek,
+
     todayKey,
     getEntry,
     putEntry,

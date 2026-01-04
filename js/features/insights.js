@@ -1,175 +1,208 @@
 (function(){
-  function isoWeekKey(d=new Date()){
-    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    const dayNum = date.getUTCDay() || 7;
-    date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
-    const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7);
-    return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+  const $ = (sel, root=document) => root.querySelector(sel);
+
+  const TYPE_OPTIONS = [
+    { key: "beer", label: "Beer", emoji: "🍺" },
+    { key: "wine", label: "Wine", emoji: "🍷" },
+    { key: "spirits", label: "Spirits", emoji: "🥃" },
+  ];
+
+  function startOfWeekISO(date){
+    const d = new Date(date);
+    const day = (d.getDay() + 6) % 7; // Mon=0
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - day);
+    return d.toISOString().slice(0,10);
   }
 
-  function moodQualifier(avg){
-    if(avg >= 4.5) return 'calm and supported';
-    if(avg >= 3.8) return 'steady and manageable';
-    if(avg >= 3.0) return 'mixed, but workable';
-    if(avg >= 2.2) return 'demanding and tiring';
-    return 'overwhelming at times';
+  function fmtWeekRange(weekStartISO){
+    const d0 = new Date(weekStartISO+"T00:00:00");
+    const d1 = new Date(d0); d1.setDate(d1.getDate()+6);
+    const opts = { month: "short", day: "numeric" };
+    return `${d0.toLocaleDateString(undefined, opts)} – ${d1.toLocaleDateString(undefined, opts)}`;
   }
 
-  function toneLabel(idx){
-    return ['overwhelming at times','demanding and tiring','mixed, but workable','steady and manageable','calm and supported'][idx] || 'mixed, but workable';
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+  function meterClass(value, goodLow, goodHigh){
+    // value in [0..1]
+    if(value >= goodHigh) return "good";
+    if(value >= goodLow) return "ok";
+    return "warn";
   }
 
-  function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
+  function renderMeter(label, value01, text){
+    const v = clamp(value01, 0, 1);
+    const cls = meterClass(v, 0.45, 0.72);
+    const pct = Math.round(v*100);
+    return `
+      <div class="meterblock">
+        <div class="meterhead">
+          <div class="label">${label}</div>
+          <div class="meterval ${cls}">${text}</div>
+        </div>
+        <div class="meter ${cls}" aria-label="${label}">
+          <span style="width:${pct}%"></span>
+        </div>
+      </div>
+    `;
+  }
 
-  TrackboardRouter.register('insights', async (mount)=>{
-    document.getElementById('brand-subtitle').textContent = 'Insights · Private · Stored on this device';
+  function summarizeWeek(entries){
+    let moodSum=0, moodN=0;
+    let poorSleep=0;
+    let freeDays=0, hadDays=0, drinksTotal=0;
+    const byType = { beer:0, wine:0, spirits:0 };
+    const tagCounts = {};
 
-    const entries = await Store.getAllEntries();
-    const week = UI.weekBounds(new Date());
-    const inWeek = entries.filter(e=> UI.inRange(e.date, week.start, week.end));
-
-    const moods = inWeek.map(e=> e.mood).filter(x=> typeof x==='number');
-    const avgMoodNum = moods.length ? (moods.reduce((a,b)=>a+b,0)/moods.length) : null;
-
-    const poorSleep = inWeek.filter(e=> !!e.poorSleep).length;
-
-    // Alcohol aggregation (context, not judgement)
-    const alcoholFreeN = inWeek.filter(e=> e.alcohol === 'free').length;
-    const alcoholHadN  = inWeek.filter(e=> e.alcohol === 'had').length;
-    const alcoholKnown = alcoholFreeN + alcoholHadN;
-
-    let alcoholStatus = null; // 'free' | 'mixed' | 'present'
-    if(alcoholKnown){
-      if(alcoholHadN === 0) alcoholStatus = 'free';
-      else if(alcoholFreeN === 0) alcoholStatus = 'present';
-      else alcoholStatus = 'mixed';
-    }
-
-    // Influences (tags)
-    const tags = {};
-    inWeek.forEach(e=>{
-      (e.tags||[]).forEach(t=> tags[t]=(tags[t]||0)+1);
-    });
-    const topTags = Object.entries(tags).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
-
-    // Weekly reflection (optional)
-    const wkKey = isoWeekKey(new Date());
-    const wk = await Store.getWeek(wkKey);
-
-    let refScore = null; // 0..4 mapped
-    if(wk && wk.reflection){
-      if(wk.reflection === 'hard') refScore = 1;
-      else if(wk.reflection === 'right') refScore = 2;
-      else if(wk.reflection === 'better') refScore = 3;
-    }
-
-    // Tone index 0..4 (very heavy -> very light)
-    let toneIdx = 2; // neutral default
-    if(avgMoodNum !== null){
-      toneIdx = clamp(Math.round(avgMoodNum - 1), 0, 4);
-      if(refScore !== null){
-        const blended = 0.75*toneIdx + 0.25*refScore;
-        toneIdx = clamp(Math.round(blended), 0, 4);
+    for(const e of entries){
+      // mood
+      if(typeof e.mood === "number"){
+        moodSum += e.mood; moodN += 1;
       }
-      if(poorSleep >= 3) toneIdx = clamp(toneIdx - 1, 0, 4);
-    } else if(refScore !== null){
-      toneIdx = clamp(refScore, 0, 4);
+
+      // sleep
+      if(e.sleep && e.sleep.poor) poorSleep += 1;
+
+      // tags
+      const tags = Array.isArray(e.tags) ? e.tags : [];
+      for(const t of tags){
+        tagCounts[t] = (tagCounts[t]||0)+1;
+      }
+
+      // alcohol
+      const a = e.alcohol || null;
+      if(!a || a.status === "free"){
+        freeDays += 1;
+      }else if(a.status === "had"){
+        hadDays += 1;
+        const drinks = Number(a.drinks||0) || 0;
+        drinksTotal += drinks;
+        const t = a.type;
+        if(t && byType.hasOwnProperty(t)) byType[t] += drinks;
+      }else{
+        // unknown -> treat as missing
+      }
     }
 
-    const stack = UI.h('div',{class:'stack'},[]);
+    const avgMood = moodN ? (moodSum/moodN) : 0;
 
-    // If no data, show gentle empty state
-    if(inWeek.length === 0 && !wk){
-      stack.appendChild(UI.h('div',{class:'card'},[
-        UI.h('div',{class:'h2'},['This week']),
-        UI.h('div',{class:'small'},['Not enough entries yet.']),
-        UI.h('div',{class:'small', style:'margin-top:6px;'},['Patterns usually appear after a few days.'])
-      ]));
-      mount.appendChild(stack);
-      return;
-    }
+    const topTags = Object.entries(tagCounts)
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,3)
+      .map(([k])=>k);
 
-    // Card 1 — Weekly tone
-    const toneCard = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h2'},['This week']),
-      UI.h('div',{class:'tonebar', 'data-tone': String(toneIdx)},[
-        UI.h('div',{class:'tonetrack'},[]),
-        UI.h('div',{class:'tonedot', style:`left:${(toneIdx/4)*100}%`},[])
-      ]),
-      UI.h('div',{class:'small', style:'margin-top:10px;'},[`Overall, this week felt ${toneLabel(toneIdx)}.`])
-    ]);
+    return { avgMood, moodN, poorSleep, freeDays, hadDays, drinksTotal, byType, topTags };
+  }
 
-    // Card 2 — What showed up
-    const showed = [];
-    if(poorSleep) showed.push('Sleep');
-    topTags.forEach(t=> showed.push(t));
-    if(alcoholStatus === 'free') showed.push('Alcohol-free days');
-    else if(alcoholStatus === 'mixed') showed.push('Alcohol (mixed)');
-    else if(alcoholStatus === 'present') showed.push('Alcohol use');
+  async function build(){
+    const root = document.createElement("div");
 
-    const uniq = Array.from(new Set(showed)).slice(0,3);
+    const weekStart = startOfWeekISO(new Date());
+    const entries = await Store.getEntriesForWeek(weekStart);
+    const sum = summarizeWeek(entries);
+    const range = fmtWeekRange(weekStart);
 
-    const showedCard = UI.h('div',{class:'card'},[
-      UI.h('div',{class:'h2'},['What showed up']),
-      UI.h('div',{class:'small'},[ uniq.length ? '' : 'Not enough detail yet.' ]),
-      UI.h('ul',{class:'bullets'}, uniq.map(x=> UI.h('li',{},[x])) )
-    ]);
+    // meters (gentle, not competitive)
+    const mood01 = sum.moodN ? (sum.avgMood/5) : 0;
+    const sleep01 = 1 - (sum.poorSleep/7);
+    const alcohol01 = clamp(sum.freeDays/7, 0, 1);
 
-    // Card 3 — Gentle reflections
-    const reflections = [];
+    const moodText = sum.moodN ? `${sum.avgMood.toFixed(1)} / 5` : "No mood yet";
+    const sleepText = `${7 - sum.poorSleep} steady night(s)`;
+    const alcText = `${sum.freeDays} alcohol-free day(s)`;
 
-    if(avgMoodNum !== null && poorSleep){
-      reflections.push('Sleep appears to influence your mood more than other factors.');
-    } else if(poorSleep){
-      reflections.push('Sleep showed up this week. It may shape how the week feels.');
-    }
+    const alcLine = TYPE_OPTIONS.map(t=>{
+      const n = sum.byType[t.key] || 0;
+      const faded = n ? "" : "muted";
+      return `<span class="${faded}" title="${t.label}">${t.emoji} ${n}</span>`;
+    }).join(" · ");
 
-    if(alcoholKnown){
-      if(alcoholStatus === 'free') reflections.push('Alcohol-free days often align with steadier moods.');
-      else if(alcoholStatus === 'present') reflections.push('Alcohol was present this week. There may or may not be a clear pattern with mood.');
-      else reflections.push('Alcohol was mixed this week. It can help to notice what else was present on those days.');
-    }
+    const toneBadge = sum.hadDays === 0 ? "good" : (sum.hadDays <= 2 ? "ok" : "warn");
+    const weekLabel =
+      sum.hadDays === 0 ? "Quiet week" :
+      sum.hadDays <= 2 ? "Mostly steady" :
+      "A bit heavy";
 
-    if(topTags.length){
-      reflections.push(`“${topTags[0]}” appeared frequently this week.`);
-    }
+    // small “badge” moments (engaging, not gamified pressure)
+    const badges = [];
+    if(sum.freeDays >= 5) badges.push({cls:"good", txt:"🟢 Consistency"});
+    if(sum.freeDays >= 3 && sum.hadDays > 0) badges.push({cls:"ok", txt:"🟡 Regrouped"});
+    if(sum.poorSleep <= 1) badges.push({cls:"good", txt:"😴 Good sleep"});
+    if(sum.topTags.includes("work")) badges.push({cls:"ok", txt:"🧠 Work week"});
+    if(!badges.length) badges.push({cls:"ok", txt:"✨ Logged something"});
 
-    // Keep 1–3, avoid repetition
-    const refl = reflections.filter(Boolean).slice(0,3);
-    const reflCard = UI.h('div',{class:'card soft'},[
-      UI.h('div',{class:'h2'},['You might notice']),
-      UI.h('div',{class:'small'},[
-        refl.length ? '' : 'Not enough data to notice patterns yet. They usually appear after a few days.'
-      ]),
-      UI.h('div',{class:'small', style:'margin-top:6px;line-height:1.5;'},[
-        refl.length ? refl.map((t,i)=> UI.h('div',{style:i? 'margin-top:6px':''},[t])) : ''
-      ])
-    ]);
+    root.innerHTML = `
+      <section class="card">
+        <div class="weekline">
+          <div>
+            <h2>Insights</h2>
+            <p class="muted">Patterns, not judgement.</p>
+          </div>
+          <div class="badge ${toneBadge}">${weekLabel}</div>
+        </div>
+        <div class="muted tiny">${range}</div>
+      </section>
 
-    // Card 4 — Details (collapsed)
-    const detailsLines = [];
-    if(avgMoodNum !== null) detailsLines.push(`Average mood: ${avgMoodNum.toFixed(1)} — ${moodQualifier(avgMoodNum)}`);
-    else detailsLines.push('Average mood: —');
-    if(alcoholKnown){
-      detailsLines.push(`Alcohol: ${alcoholStatus === 'free' ? 'Alcohol-free days were common' : (alcoholStatus === 'mixed' ? 'Mixed' : 'Present')}`);
-    } else {
-      detailsLines.push('Alcohol: —');
-    }
-    detailsLines.push(`Poor sleep: ${poorSleep ? 'Present' : 'Not present'}`);
+      <section class="card">
+        <h3>This week at a glance</h3>
+        <div class="grid3 mt">
+          <div class="stat">
+            <div class="stat-k">Average mood</div>
+            <div class="stat-v">${sum.moodN ? sum.avgMood.toFixed(1) : "—"}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-k">Alcohol-free days</div>
+            <div class="stat-v">${sum.freeDays}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-k">Poor sleep days</div>
+            <div class="stat-v">${sum.poorSleep}</div>
+          </div>
+        </div>
+      </section>
 
-    const details = UI.h('details',{class:'details'},[
-      UI.h('summary',{class:'small'},['Details (optional)']),
-      UI.h('div',{class:'small', style:'margin-top:10px;line-height:1.6;'}, detailsLines.map(l=> UI.h('div',{},[l])))
-    ]);
+      <section class="card">
+        <h3>Dashboard</h3>
+        <p class="muted">A “weather report” for your week.</p>
+        <div class="mt">
+          ${renderMeter("Mood", mood01, moodText)}
+          ${renderMeter("Sleep", sleep01, sleepText)}
+          ${renderMeter("Alcohol-free", alcohol01, alcText)}
+        </div>
+      </section>
 
-    const detailsCard = UI.h('div',{class:'card'},[details]);
+      <section class="card">
+        <h3>Alcohol snapshot</h3>
+        <div class="muted">Drinks logged: <strong>${sum.drinksTotal}</strong></div>
+        <div class="mt">${alcLine}</div>
+        <div class="muted tiny mt">Tip: log type + count on the Alcohol screen. Estimates are fine.</div>
+      </section>
 
-    stack.appendChild(toneCard);
-    stack.appendChild(showedCard);
-    stack.appendChild(reflCard);
-    stack.appendChild(detailsCard);
+      <section class="card">
+        <h3>What showed up</h3>
+        <div class="pillrow mt">
+          ${(sum.topTags.length ? sum.topTags : ["No tags yet"]).map(t=>`<span class="pill ghost">${t}</span>`).join("")}
+        </div>
+      </section>
 
-    mount.appendChild(stack);
+      <section class="card">
+        <h3>Small wins</h3>
+        <div class="badgerow mt">
+          ${badges.map(b=>`<span class="badge ${b.cls}">${b.txt}</span>`).join("")}
+        </div>
+        <p class="muted mt">If you want it more “game-like”, we can add optional weekly “quests” — but only if it stays gentle.</p>
+      </section>
+    `;
+
+    return root;
+  }
+
+  TrackboardRouter.register("insights", async ()=>{
+    const view = document.getElementById("view");
+    const node = await build();
+    view.appendChild(node);
+    TrackboardUI.setActiveNav("insights");
+    TrackboardUI.setSubtitle("Insights · Private · Stored on this device");
   });
 })();
