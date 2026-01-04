@@ -1,5 +1,6 @@
 
-const CACHE = 'trackboard-v1-5-0';
+// Bump this value whenever assets change so GitHub Pages + SW cache don't serve stale JS.
+const CACHE = 'trackboard-v1-6-2';
 const ASSETS = [
   './',
   './index.html',

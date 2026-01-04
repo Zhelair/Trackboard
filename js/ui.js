@@ -168,8 +168,3 @@
   window.UI = { toast, h, fmtDate, weekBounds, inRange };
 
 })();
-
-
-  // Compatibility: some modules expect TrackboardUI, others UI
-  window.TrackboardUI = window.TrackboardUI || window.UI;
-  window.UI = window.UI || window.TrackboardUI;

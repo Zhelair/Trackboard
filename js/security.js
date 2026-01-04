@@ -1,13 +1,31 @@
 (function(){
-  // Safety stub: prevent hard crashes if UI helper failed to load
-  window.TrackboardUI = window.TrackboardUI || window.UI || {
-    toast: function(){},
-    setSubtitle: function(){},
-    setActiveNav: function(){},
-    openTimerModal: function(){},
-    closeTimerModal: function(){},
-    todayISO: function(d){ try{ const x=new Date(d||Date.now()); const yyyy=x.getFullYear(); const mm=String(x.getMonth()+1).padStart(2,'0'); const dd=String(x.getDate()).padStart(2,'0'); return `${yyyy}-${mm}-${dd}`; }catch(e){ return ''; } }
-  };
+  // ------------------------------------------------------------
+  // SAFETY STUBS
+  // If Service Worker cache or a partial deploy serves stale JS,
+  // feature modules may execute before ui.js defines TrackboardUI.
+  // This stub prevents hard-crashes and lets saving still work.
+  // ui.js will later overwrite these with the full implementation.
+  // ------------------------------------------------------------
+  if(!window.TrackboardUI){
+    const pad = (n)=> String(n).padStart(2,'0');
+    const todayISO = ()=>{
+      const d = new Date();
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    };
+    window.TrackboardUI = {
+      toast: ()=>{},
+      h: (strings, ...vals)=> strings.reduce((acc,s,i)=>acc+s+(vals[i]??''),''),
+      todayISO,
+      weekBounds: ()=>({start:'', end:''}),
+      inRange: ()=>true,
+      setSubtitle: ()=>{},
+      setActiveNav: ()=>{},
+      openTimerModal: ()=>({close:()=>{}})
+    };
+  }
+  if(!window.UI){
+    window.UI = { toast: ()=>{}, h: window.TrackboardUI.h };
+  }
   // Lightweight local passphrase lock + encryption-at-rest for entries/weeks.
   // Settings remain unencrypted so we can know whether lock is enabled.
 
